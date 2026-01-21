@@ -20,6 +20,10 @@ An iOS **[Scriptable](https://scriptable.app/)** widget that shows a **Joe Mazzu
    - Long-press the widget → **Edit Widget**
    - Set **Script** to your `Mazzulla Quotes` script
 
+## Example
+
+![Widget example](example.jpg)
+
 ## Customization
 
 - **Add/remove quotes**: edit the `quotes` array in `scriptable.js`.
