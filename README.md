@@ -1,4 +1,4 @@
-# mazzula_quotes
+# Daily Joe Mazzulla Quote
 
 An iOS **[Scriptable](https://scriptable.app/)** widget that shows a **Joe Mazzulla quote of the day**. The quote rotates daily based on the day-of-year, cycling through the built-in list.
 
