@@ -49,6 +49,18 @@ function validateFeed(value) {
       }
       quote.added_at = item.added_at;
     }
+    if (item.kind !== undefined) {
+      if (item.kind !== "quote" && item.kind !== "anecdote") {
+        throw new Error("Invalid quote kind.");
+      }
+      quote.kind = item.kind;
+    }
+    if (item.context !== undefined) {
+      if (typeof item.context !== "string" || !item.context.trim() || item.context.length > 500) {
+        throw new Error("Invalid quote context.");
+      }
+      quote.context = item.context;
+    }
     return quote;
   });
 }
@@ -117,7 +129,9 @@ try {
 
 const widget = new ListWidget();
 widget.backgroundColor = new Color("#007A33");
-const quoteText = widget.addText(quote.text);
+const displayText = (quote.kind === "anecdote" ? "Anecdote: " : "") + quote.text +
+  (quote.context ? "\n\n" + quote.context : "");
+const quoteText = widget.addText(displayText);
 quoteText.textColor = Color.white();
 quoteText.font = Font.systemFont(16);
 quoteText.centerAlignText();

@@ -21,52 +21,101 @@ Future quote additions need no copy/paste. Changes to the script itself still re
 
 The request timeout is eight seconds. Cached data lives locally in Scriptable's library as `daily-mazzulla-quotes-v1.json`; clearing the app's data resets the displayed/seen history. If device storage cannot save that cache, the widget still renders, but cannot guarantee that day's selection survives another run.
 
-## Automatic discovery
+## Weekly editorial review
 
-[Discover new quotes](.github/workflows/update-quotes.yml) runs daily at **13:17 UTC** and can also be started from **Actions → Discover new quotes → Run workflow** on the default branch. It becomes active after these files are merged into the default branch and Actions is enabled. The job uses GitHub's repository token with `contents: write`; no API keys, paid AI, or third-party packages are required.
+A local cron job runs an ephemeral Codex CLI research session each week. It reads recent reporting, interviews, and accessible video/transcripts, compares them with the approved collection and the complete local review history, and proposes **up to five strong candidates**. Each run overlaps at least the last 14 days and extends earlier to cover gaps. Zero candidates is a normal result. Historical research batches enter the same review queue without advancing the recent-news coverage window.
 
-The updater reads these public publisher feeds:
+The assistant judges attribution, context, authenticity, and whether the material fits the collection. There is no keyword filter or automatic publication. Direct quotes keep verified source wording; reported anecdotes are identified as anecdotes and retain the reporter's uncertainty. Each candidate includes its source, publication date and remark/event date when known, separate context, an editorial explanation, and evidence notes distinguishing article verification from video verification. The researcher also checks the live published feed when available and records source-access limitations.
 
-- [Boston.com: Joe Mazzulla](https://www.boston.com/tag/joe-mazzulla/feed/)
-- [Boston.com: Boston Celtics](https://www.boston.com/tag/boston-celtics/feed/)
-- [CelticsBlog](https://www.celticsblog.com/rss/index.xml)
+The private queue lives on the scheduling machine:
 
-It examines up to ten recent items per feed, using full feed content when present and publisher article paragraphs otherwise. Downloads are limited to those publishers, including redirects, with a 15-second timeout and a 2 MB response limit.
+- `review-queue/queue.json` is the source of truth for candidates, decisions, and research history.
+- `review-queue/queue.md` is the readable review copy, with stable candidate IDs. It can be regenerated; edits to this Markdown do not change decisions.
+- `review-queue/logs/` contains local execution logs.
 
-A candidate must be a complete double-quoted span of **4–25 words**, immediately attributed to Joe Mazzulla by name. It must also match a small unusual-phrase filter: examples include death/funerals, villains, war, psychological remarks, *The Town*, and revolving doors. It copies the source wording, adds the article link and date, and never generates or truncates speech. At most one quote totaling at most 25 words is automatically added from an article. Normalized punctuation/spacing and snippets already contained in legacy entries are deduplicated.
+The whole directory is gitignored. Pending, approved, and rejected candidates remain in the history so later research can honor decisions and avoid repeats. Nothing is posted to GitHub by the scheduled job, and no ChatGPT Page or built-in scheduled app chat is created.
 
-This conservative filter misses long quotes, unattributed follow-up remarks, video-only interviews, jokes outside its vocabulary, and anything outside the monitored feeds. It can still misjudge what is funny or unusual; a successful run with **zero additions is normal**. Contributions remain welcome for material it misses.
+After the user explicitly approves particular candidates and their wording/context, the assistant records that decision and appends only the approved entries to `quotes.json`. It validates the feed, reviews the diff, and publishes through the repository's normal GitHub process. The widget consumes additions once they are on `main`. Rejected or pending entries never belong in the feed. Approval in the local queue alone does not perform a GitHub write.
 
-Accepted quotes append directly to `quotes.json`; existing entries are preserved. The updater writes a complete temporary file before replacing the feed and rejects detected concurrent edits. Runs cannot overlap. A partial source failure is logged while working sources can contribute; total discovery failure exits unsuccessfully without writing. The workflow commits only a changed `quotes.json`, with no empty heartbeat commits or force pushes. A conflicting remote update makes the push fail visibly; the next run starts from the current default branch.
+## Running the weekly job
 
-GitHub schedules run only on the default branch, may be delayed, and are [automatically disabled in public repositories after 60 days without repository activity](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule). Check the Actions page if updates stop; re-enable the workflow if needed and run it manually. Branch protection or repository policies that disallow the job's write token must be resolved by the repository owner before automatic commits can work. Fork users must change `FEED_URL` in `scriptable.js` to their own repository.
+The scheduling machine needs Linux, Bash, Python 3.12+, `flock`, `timeout`, and an installed, authenticated Codex CLI supporting `exec --ephemeral`, live web search, and structured output. The job uses the account and model already configured for that CLI. Account usage limits apply; the machine, network, and authentication must remain available.
+
+Create `review-queue/cron.env` locally with the originating thread ID for the existing Agent Inbox integration:
+
+```sh
+MAZZULLA_ORIGIN_THREAD='your-original-thread-id'
+```
+
+Run a review manually with:
+
+```sh
+bash scripts/weekly_review.sh
+```
+
+The installed schedule is Monday at **13:17 UTC** on the UTC host. A matching crontab entry uses an absolute repository path:
+
+```cron
+17 13 * * 1 /bin/bash /absolute/path/daily-mazzulla-quote/scripts/weekly_review.sh
+```
+
+The runner prevents overlapping reviews, gives research up to 30 minutes, and embeds validated feed/queue snapshots directly into the research prompt. The research session runs from a temporary directory with the read-only sandbox and uses web tools without local shell/file reads. A trusted host process validates its final batch and imports candidates as pending. Importing rechecks the current queue under a lock, deduplicates normalized text against the feed and all candidate statuses, and preserves existing decisions. Editorial review also checks less literal duplicates such as another account of the same incident.
+
+A successful empty review still records coverage, the sources actually reviewed, and passed-over leads. Every batch explicitly reports a complete or failed outcome; a completed result must list at least one reviewed article, recording, or transcript. A normal CLI exit with a failed outcome is rejected, and a failed or invalid research result does not import candidates or advance successful history. Queue writes replace a complete temporary JSON file atomically; Markdown is derived afterward. If Markdown writing fails, the JSON remains authoritative and `render` repairs the view. Repeating an identical batch does not duplicate candidates or research history.
+
+When new candidates arrive, a second, brief ephemeral root session updates the originating Agent Inbox with only the pending count. Failures create a privacy-safe needs-action item. The existing configured completion callback handles notifications; the runner does not send a separate message. Finalizer failures leave the queue intact and are recorded in the local run log. Successful reviews with no additions do not trigger an inbox update.
+
+## Reviewing and publishing
+
+Use the rendered queue to review evidence and refer to candidates by their stable IDs. The assistant can import a separately researched historical batch with the same fields as [the batch schema](scripts/review_batch.schema.json); the weekly five-candidate limit does not constrain a manually reviewed historical batch:
+
+```sh
+python3 scripts/review_queue.py import /path/to/researched-batch.json
+python3 scripts/review_queue.py render
+```
+
+Record a user's explicit approval or rejection with a reason:
+
+```sh
+python3 scripts/review_queue.py decide candidate-ID approved --reason "User approved this wording and context."
+python3 scripts/review_queue.py decide candidate-ID rejected --reason "User's reason for passing on this candidate."
+```
+
+These commands only update the local review queue. For publication, append approved records to `quotes.json`, leaving existing IDs stable. Every new record requires:
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Stable, unique ID containing letters, digits, `_`, or `-` (up to 100 characters). |
+| `text` | Verified quote wording or a clearly identified anecdote (up to 3000 characters). |
+| `source_url` | HTTPS link to the supporting article or video. |
+| `added_at` | Date added to the feed, in `YYYY-MM-DD` format. |
+| `kind` | Optional `quote` or `anecdote`; mark reported anecdotes so the widget labels them. |
+| `context` | Optional brief explanation, displayed separately below the text (up to 500 characters). |
+
+Source titles, evidence notes, editorial reasoning, and actual remark/publication dates stay in the review queue. The original 39 records are grandfathered without invented source metadata. Intentional reviewed corrections remain possible; the migration regression expectation should be updated when making one.
+
+Before publishing, validate the complete feed, inspect the diff for only the approved additions/corrections, and run the checks below. A passing validator checks structure, IDs, source URLs, and dates; it does not establish authenticity or user approval. Keep the private queue and logs out of commits. If a GitHub write conflicts or fails, read the current feed and reconcile the reviewed IDs before retrying, so an uncertain write does not duplicate or overwrite entries.
 
 ## Development and verification
 
-Use Python 3.12+ and Node.js 22+. No dependency installation is needed.
+Use Python 3.12+ and Node.js 22+. The validators and tests use their standard libraries; no dependency installation is needed.
 
 ```sh
-npm test
+python3 scripts/validate_quotes.py
 python3 -m unittest discover -s test -p 'test_*.py'
-python3 scripts/update_quotes.py --dry-run
+npm test
 ```
 
-The dry run fetches live sources and reports counts without changing files. To append qualifying results locally:
-
-```sh
-python3 scripts/update_quotes.py --write
-```
-
-The tests cover mocked Scriptable rendering, feed/cache failure, daily stability, unseen-quote priority, DST/year rollover, conservative attribution, duplicates, untrusted sources, partial/total source failures, and failed/concurrent file writes. They do not exercise a real iPhone or prove when iOS will refresh. The pull-request workflow runs both test suites without fetching live articles.
+Tests cover feed schema/source validation, preservation of the original collection, queue decisions and deduplication, concurrent imports, interrupted writes, and cron-runner failure/timeout behavior with a fake Codex process. Widget tests cover rendering, context/anecdote labels, feed/cache failure, daily stability, unseen-quote priority, and DST/year rollover. Tests do not fetch live reporting, prove editorial quality, exercise a real iPhone, or prove when iOS will refresh. The pull-request workflow runs these checks without invoking live research.
 
 ## Customization and contributing
 
-- **Quotes:** edit [quotes.json](quotes.json). Each record needs a stable unique `id` and a `text` string; sourced additions should include an HTTPS `source_url` and `added_at` in `YYYY-MM-DD` format. Keep an existing quote's ID when correcting it.
+- **Research guidance:** edit [the editorial prompt](scripts/weekly_review_prompt.txt), keeping human approval before publication.
 - **Background:** change `widget.backgroundColor = new Color("#007A33")` in `scriptable.js`.
 - **Font:** change `quoteText.font = Font.systemFont(16)` in `scriptable.js`.
-- **Discovery rules or sources:** edit [scripts/update_quotes.py](scripts/update_quotes.py) and its focused tests.
+- **Forks:** change `FEED_URL` in `scriptable.js` to the fork's feed.
 
-Please open a **Pull Request** adding sourced quotes to `quotes.json`, or a **GitHub Issue** with the quote and a source link.
+Please open a **GitHub Issue** with a quote or anecdote and a source link, or a **Pull Request** with sourced additions for review.
 
 ## Example
 

@@ -85,7 +85,10 @@ test("invalid remote feeds and HTTP errors never replace last-good quotes", asyn
   const badFeeds = ["{broken", [], {}, [feed[0], feed[0]], [{id: "bad", text: " "}],
     [{id: "bad", text: "Hello", source_url: "javascript:alert(1)"}],
     [{id: "bad", text: "Hello", source_url: "https://example.com\\@evil.test"}],
-    [{id: "bad", text: "Hello", added_at: "yesterday"}]];
+    [{id: "bad", text: "Hello", added_at: "yesterday"}],
+    [{id: "bad", text: "Hello", kind: "unknown"}],
+    [{id: "bad", text: "Hello", context: " "}],
+    [{id: "bad", text: "Hello", context: 42}]];
   for (const data of badFeeds) {
     const first = await render();
     const next = await render({ files: first.files, data, now: "2026-10-14T10:00:00-04:00" });
@@ -156,4 +159,21 @@ test("failed cache writes keep the existing cache and still render", async () =>
   assert.equal(next.files.get(cachePath), saved);
   assert.equal(next.complete, true);
   assert.ok(next.logs.some(log => log.startsWith("Could not save quote cache:")));
+});
+
+test("context and anecdote labels survive same-day snapshots and offline refresh", async () => {
+  for (const kind of ["quote", "anecdote"]) {
+    const entry = {id: "reviewed-example", text: "A short test entry.", kind,
+      context: "Context kept separate from the source wording.",
+      source_url: "https://example.com/article", added_at: "2026-10-13"};
+    const expected = (kind === "anecdote" ? "Anecdote: " : "") + entry.text + "\n\n" + entry.context;
+    const first = await render({data: [entry]});
+    assert.equal(first.widget.text, expected);
+    assert.deepEqual(first.cache.daily.quote, entry);
+    const midday = await render({files: first.files, data: [{...entry, context: "Revised context."}]});
+    assert.equal(midday.widget.text, expected);
+    const next = await render({files: first.files, offline: true, now: "2026-10-14T10:00:00-04:00"});
+    assert.equal(next.widget.text, (kind === "anecdote" ? "Anecdote: " : "") + entry.text + "\n\nRevised context.");
+    assert.equal(next.widget.url, entry.source_url);
+  }
 });
