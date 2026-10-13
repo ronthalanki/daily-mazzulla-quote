@@ -1,64 +1,128 @@
-// List of quotes
-let quotes = [
-  "I told Charles when he left, 'I'm not talking to you during the season. I'm not waving to you at the national anthem. I'm not doing that. You're an enemy.' So he breached NBA rules and came into the assistant coach locker room and forced me to give him a hug. That could easily be a psychological tell that knocks you off your game competitively. So he knew what he was doing.",
-"The biggest thing that we rob people of, from an entertainment standpoint, is you can't fight anymore. I wish you could bring back fighting. I just don't get why some sports are allowed to clear the benches. They have bats and weapons, we don't. We just have a ball. The other sport has one of the hardest surfaces and playing instruments in pucks and sticks and we're not allowed to throw down a little bit?",
-"Zero. No pressure. We're all going to be dead soon, and it really doesn't matter anymore, so there's zero pressure.",
-"There's nothing anyone in this circle can do to me that's gonna impact my identity and who I am as a person or a coach. We're either gonna win or we're not, and 40 years from now, none of you are invited to my funeral and that's it.",
-"People are gonna say the target is on our back, but I hope it's right on our forehead in between our eyes. I hope I can see the red dot.",
-"Before I forget, no one's ever asked me what my favorite scene from 'The Town' was. I know you guys all know that's my favorite movie, but no one's ever been curious about what my favorite scene is? My favorite one is Doug MacRay is getting ready to leave town, and he skips by the FBI's car and leaves a nice, well-thought-out handwritten note underneath the antenna, and then gets out of town. That's my favorite scene.",
-"If we ever decided to rob Fenway, I was like, 'We could probably really get away with this.' How could you not go to Fenway and think you couldn't rob it?",
-"Ever seen 'Spider-Man'? … 'Into the Spider-Verse'? There's like, 20 different Spider-Men? That's like our team.",
-"I would just go until I die. -- Mazzulla on running a marathon",
-"Mazzulla on what he saw after Brown took off mask: 'His face'",
-"It's beautiful. You should get booed. To me, it's the ultimate compliment.",
-"The animal kingdom is the most pure form of hierarchy and role definition that there is.",
-"We're all villains in someone's eyes.",
-"I wouldn't say I enjoyed the offseason. I enjoyed the parade.",
-"I'm always up to get knocked out. I think that's important, too. If you can't go through the day hoping you don't get knocked out, I don't know what do you do.",
-"There's no fouls in a war. You either die or you don't.",
-"It ended up being a great experience for me. I had to do six hours of treatment in order to coach the next game without too much of a limp because I could not walk. But I tell you what, it was one of the best things that could happen to me for the rest of the season because it put me in this fight or flight mentality to where I just could not relax... It was awesome. I'm thinking about maybe getting hurt every All-Star break. - Mazzula on his torn meniscus",
-"When he won coach of the month, I said 'Hey, congratulations.' And he just looked at me and said, 'Nobody cares.'",
-"It's beautiful. -- Mazzulla on no Celtics players being finalists for awards.",
-"Save yourself the rest of the question. I don't really care.",
-"I like in cricket that you can just keep wearing the pitcher down by fouling off on purpose. It's like a huge mental psychological component to just wearing this guy's arm out by just fouling foul balls until he can't pitch anymore. I love the idea of that.",
-"'Stop fouling.' Wait, that's it? 'Yes, that’s exactly what I said.'",
-"Joe Mazzulla on Jayson Tatum's scary fall after Caleb Martin's hard foul in game 1: 'I was kind of excited about the whole situation. I enjoyed watching it.'",
-"[Shammgod] said Mazzulla watched so much game film that Shammgod and the other assistants began to have concerns about his mental health. So they convinced him to sit down with them after long days of work and watch an hour of regular television.",
-"Joe Mazzulla just walked past Marcus Smart in the locker room, did a full somersault in front of him, turned and said 'you can’t do that.' Then walked out.",
-"Expect for it to be difficult. Don’t wish for it to be anything other than what it is, and you respond accordingly",
-"Zero, feel zero difference. And I think if you’re ever lucky to do again, when it does feel different — that’s when I’d rather not do it anymore.",
-"We’re either gonna win or we’re not, and 40 years from now, none of you are invited to my funeral and that’s it.",
-"I am the worst coach ever.” — Mazzulla leaving a Zoom conference call with the media in May 2023.",
-"Everybody wants to win until it’s really time to win. And then you have to nut up and do a lot of [expletive] that you don’t want to do.” — Mazzulla on the Celtics’ mindset during the playoffs",
-"Unless they changed the light bulbs in the arena, they won’t be any brighter than they were last series. - Mazzulla on the bright lights of playing in the NBA Finals",
-"What do you like about the City Connect jersey? And his response, 'they say Celtics on them.'",
-"Placing a sand castle in the film room to remind players that, like a sand castle washing away on the beach every morning, the team needs to build new success each day.",
-"I don’t care. Whatever the rules are we will find a way to follow them and manipulate them at the same time.",
-"When asked about what he expects for a Game 4 playoff game. Joe: 'An absolute war.' Reporter: More than tonight? Joe: 'I hope so'",
-"I was like, '(The wolf) didn't have a good enough relationship with him'",
-"Mazzula doesn't use revolving doors because 'if one of them gets stuck, then you're just a sitting duck.'",
-"I always try to find a nice car and park near it, because I know nice cars try to park far away. I just want to piss that guy off",
-"On the expectations for JT to return, Joe: 'I failed medical school'"
+// Paste this whole file into Scriptable once. Quotes update from the JSON feed.
+const FEED_URL = "https://raw.githubusercontent.com/ronthalanki/daily-mazzulla-quote/main/quotes.json";
+const REQUEST_TIMEOUT_SECONDS = 8;
+
+// A small first-run/offline fallback, copied unchanged from the original list.
+const FALLBACK_QUOTES = [
+  {
+    id: "quote-573c313429560569",
+    text: "Zero. No pressure. We're all going to be dead soon, and it really doesn't matter anymore, so there's zero pressure."
+  },
+  {
+    id: "quote-b0e58a34de482eac",
+    text: "It's beautiful. You should get booed. To me, it's the ultimate compliment."
+  },
+  {
+    id: "quote-dffa62eac7600e4f",
+    text: "We're all villains in someone's eyes."
+  },
+  {
+    id: "quote-7ba5a975e065a644",
+    text: "There's no fouls in a war. You either die or you don't."
+  }
 ];
 
-// Pick a quote based on the day
-let today = new Date();
-let dayOfYear = Math.floor(
-  (today - new Date(today.getFullYear(), 0, 0)) / 1000 / 60 / 60 / 24
-);
-let quote = quotes[dayOfYear % quotes.length]; // rotate through quotes daily
+function validateFeed(value) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 5000) {
+    throw new Error("Expected a nonempty quote array (up to 5000 entries).");
+  }
+  const ids = new Set();
+  return value.map(item => {
+    if (!item || typeof item.id !== "string" || !/^[a-zA-Z0-9_-]{1,100}$/.test(item.id) ||
+        ids.has(item.id) || typeof item.text !== "string" ||
+        !item.text.trim() || item.text.length > 3000) {
+      throw new Error("Invalid quote or duplicate ID.");
+    }
+    ids.add(item.id);
+    const quote = { id: item.id, text: item.text };
+    if (item.source_url !== undefined) {
+      // Scriptable does not need a browser URL parser; allow HTTPS links only.
+      if (typeof item.source_url !== "string" || item.source_url.length > 2000 ||
+          !/^https:\/\/[^/\s@?#\\]+(?:[/?#][^\s\\]*)?$/i.test(item.source_url)) {
+        throw new Error("Invalid quote source URL.");
+      }
+      quote.source_url = item.source_url;
+    }
+    if (item.added_at !== undefined) {
+      if (typeof item.added_at !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(item.added_at)) {
+        throw new Error("Invalid quote date.");
+      }
+      quote.added_at = item.added_at;
+    }
+    return quote;
+  });
+}
 
-// Create the widget
-let widget = new ListWidget();// 
+function dateKey(date) {
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0")].join("-");
+}
+
+const fm = FileManager.local();
+const cachePath = fm.joinPath(fm.libraryDirectory(), "daily-mazzulla-quotes-v1.json");
+let cachedFeed;
+let cachedDaily;
+let seenSourceIds = [];
+try {
+  if (fm.fileExists(cachePath)) {
+    const cache = JSON.parse(fm.readString(cachePath));
+    if (cache.version !== 1) throw new Error("Unknown cache version.");
+    cachedFeed = validateFeed(cache.feed);
+    if (Array.isArray(cache.seen_source_ids)) {
+      seenSourceIds = cache.seen_source_ids.filter(id => typeof id === "string").slice(0, 5000);
+    }
+    if (cache.daily && /^\d{4}-\d{2}-\d{2}$/.test(cache.daily.date)) {
+      cachedDaily = { date: cache.daily.date, quote: validateFeed([cache.daily.quote])[0] };
+    }
+  }
+} catch (error) {
+  console.log("Could not fully read quote cache: " + error.message);
+}
+
+let quotes = cachedFeed || FALLBACK_QUOTES;
+try {
+  const request = new Request(FEED_URL);
+  request.timeoutInterval = REQUEST_TIMEOUT_SECONDS;
+  const data = await request.loadJSON();
+  if (!request.response || request.response.statusCode !== 200) {
+    throw new Error("Quote feed did not return HTTP 200.");
+  }
+  quotes = validateFeed(data);
+} catch (error) {
+  console.log("Using saved/offline quotes: " + error.message);
+}
+
+const today = new Date();
+const day = dateKey(today);
+// UTC arithmetic on local calendar components avoids 23/25-hour DST days.
+const calendarDay = Math.floor(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) / 86400000);
+// Store the quote itself so an edited/removed feed entry cannot change it today.
+const unseenQuote = quotes.find(item => item.source_url && !seenSourceIds.includes(item.id));
+const quote = cachedDaily && cachedDaily.date === day
+  ? cachedDaily.quote
+  : unseenQuote || quotes[((calendarDay % quotes.length) + quotes.length) % quotes.length];
+if (quote.source_url && !seenSourceIds.includes(quote.id)) seenSourceIds.push(quote.id);
+seenSourceIds = seenSourceIds.filter(id => quotes.some(item => item.id === id));
+
+try {
+  // Write a complete temporary file before replacing the last-good cache.
+  const temporaryPath = cachePath + ".tmp";
+  fm.writeString(temporaryPath, JSON.stringify({
+    version: 1, feed: quotes, daily: { date: day, quote }, seen_source_ids: seenSourceIds
+  }));
+  fm.move(temporaryPath, cachePath);
+} catch (error) {
+  console.log("Could not save quote cache: " + error.message);
+}
+
+const widget = new ListWidget();
 widget.backgroundColor = new Color("#007A33");
-
-
-// Add the quote
-let quoteText = widget.addText(quote);
+const quoteText = widget.addText(quote.text);
 quoteText.textColor = Color.white();
 quoteText.font = Font.systemFont(16);
 quoteText.centerAlignText();
-
-// Show widget
+if (quote.source_url) widget.url = quote.source_url;
+// iOS decides the actual refresh time; this asks for the next local midnight.
+widget.refreshAfterDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
 Script.setWidget(widget);
 Script.complete();
