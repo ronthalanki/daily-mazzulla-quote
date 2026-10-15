@@ -1,0 +1,31 @@
+name: Check widget and quote feed
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Validate published quote feed
+        run: python scripts/validate_quotes.py
+      - name: Test review queue and quote validation
+        run: python -m unittest discover -s test -p 'test_*.py'
+      - name: Test Scriptable widget
+        run: npm test
