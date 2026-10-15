@@ -28,7 +28,7 @@ A local cron job runs an ephemeral Codex CLI research session each week. It read
 
 The assistant judges attribution, context, authenticity, and whether the material fits the collection. There is no keyword filter or automatic publication. Direct quotes keep verified source wording; reported anecdotes are identified as anecdotes and retain the reporter's uncertainty. When needed, a brief visible context lead-in supplies the scene, question, or behavior required to understand the text on its own. A candidate whose text already stands alone uses an empty context string. Its source, publication date and remark/event date when known, editorial explanation, and evidence notes distinguishing article verification from video verification remain separate review metadata. The researcher also checks the live published feed when available and records source-access limitations.
 
-New candidates aim for roughly **35 words / 220 characters total** on the medium widget, including the lead-in and any anecdote label. This is a flexible editorial target, not a validator cutoff. Research favors shorter complete remarks, concise setup, and concise paraphrased anecdotes; fuller background belongs in evidence notes. Essential setup and factual qualifiers must remain visible, and direct quotation wording must stay intact.
+New candidates use the shortest complete, accurate version that works on the medium widget. There is no word-count target; a short quote can stand alone. Context is included only when needed to understand the remark or preserve its essential setup, and fuller background belongs in evidence notes. Entries are never padded to a standard length, and direct quotation wording must stay intact.
 
 The private queue lives on the scheduling machine:
 
