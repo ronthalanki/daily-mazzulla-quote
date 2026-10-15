@@ -129,14 +129,20 @@ try {
 
 const widget = new ListWidget();
 widget.backgroundColor = new Color("#007A33");
-const displayText = (quote.kind === "anecdote" ? "Anecdote: " : "") + quote.text +
-  (quote.context ? "\n\n" + quote.context : "");
+widget.setPadding(12, 12, 12, 12);
+const bodyText = quote.kind === "anecdote" ? "Anecdote: " + quote.text
+  : quote.kind === "quote" ? "“" + quote.text + "”" : quote.text;
+const displayText = (quote.context ? quote.context + " " : "") + bodyText;
 const quoteText = widget.addText(displayText);
 quoteText.textColor = Color.white();
 quoteText.font = Font.systemFont(16);
+// Permit native fitting down to 12 pt; long entries still need an on-device check.
+quoteText.minimumScaleFactor = 0.75;
+quoteText.lineLimit = 0;
 quoteText.centerAlignText();
 if (quote.source_url) widget.url = quote.source_url;
 // iOS decides the actual refresh time; this asks for the next local midnight.
 widget.refreshAfterDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
 Script.setWidget(widget);
+if (config.runsInApp) await widget.presentMedium();
 Script.complete();

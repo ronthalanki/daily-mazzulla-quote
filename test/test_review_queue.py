@@ -73,6 +73,56 @@ class ReviewQueueTests(unittest.TestCase):
             self.assertEqual(saved["decision_reason"], "Explicit user choice.")
             self.assertEqual(saved["context"], CANDIDATE["context"])
 
+    def test_widget_preview_has_context_before_unchanged_text_and_separate_metadata(self):
+        for kind in ("quote", "anecdote"):
+            data = batch('He said, "Stay ready," then left.')
+            candidate = data["candidates"][0] | {"kind": kind}
+            queue = {"candidates": [candidate | {"id": "candidate-test", "status": "pending"}],
+                     "runs": []}
+            original = copy.deepcopy(queue)
+            markdown = review_queue.render_queue(queue)
+            preview = markdown.split("**Widget preview:**\n\n", 1)[1].split("\n\n**Why it fits:**", 1)[0]
+            self.assertTrue(all(line.startswith("> ") for line in preview.splitlines()))
+            visible_text = "\n".join(line[2:].rstrip() for line in preview.splitlines())
+            body = ('“He said, "Stay ready," then left.”' if kind == "quote"
+                    else 'Anecdote: He said, "Stay ready," then left.')
+            self.assertEqual(visible_text, "Synthetic interview context. " + body)
+            for metadata in (candidate["editorial_reason"], candidate["source_title"],
+                             candidate["source_url"], candidate["evidence"]["notes"]):
+                self.assertNotIn(metadata, preview)
+                self.assertIn(metadata, markdown)
+            self.assertEqual(queue, original)
+
+    def test_self_contained_candidates_allow_empty_context_without_extra_preview_spacing(self):
+        for kind in ("quote", "anecdote"):
+            data = batch(f"A self-contained {kind}.")
+            data["candidates"][0].update(kind=kind, context="")
+            directory = self.directory / kind
+            self.assertEqual(review_queue.import_batch(data, directory)["added"], 1)
+            queue = review_queue.load_queue(directory)
+            self.assertEqual(queue["candidates"][0]["context"], "")
+            markdown = (directory / "queue.md").read_text()
+            preview = markdown.split("**Widget preview:**\n\n", 1)[1].split("\n\n**Why it fits:**", 1)[0]
+            expected = '“A self-contained quote.”' if kind == "quote" else "Anecdote: A self-contained anecdote."
+            self.assertEqual(preview, "> " + expected)
+
+    def test_grouped_candidates_keep_import_numbers_and_tentative_review_notes(self):
+        for index in range(1, 4):
+            review_queue.import_batch(batch(f"Candidate number {index}."), self.directory)
+        ids = [candidate["id"] for candidate in self.read()["candidates"]]
+        review_queue.decide(self.directory, ids[0], "rejected", "Explicit rejection.")
+        review_queue.decide(self.directory, ids[1], "approved", "Explicit approval.")
+        review_queue.decide(self.directory, ids[2], "pending", "User is uncertain; keep for review.")
+        markdown = (self.directory / "queue.md").read_text()
+        sections = [markdown.split(f"## {status.title()} (1)\n\n", 1)[1].split("\n## ", 1)[0]
+                    for status in ("pending", "approved", "rejected")]
+        for section, number in zip(sections, (3, 2, 1)):
+            self.assertIn(f"### {number}. `{ids[number - 1]}`", section)
+        self.assertIn("**Review notes:** User is uncertain; keep for review.", sections[0])
+        self.assertNotIn("**Decision:**", sections[0])
+        self.assertIn("**Decision:** Explicit approval.", sections[1])
+        self.assertIn("**Decision:** Explicit rejection.", sections[2])
+
     def test_duplicates_in_published_feed_and_same_batch_are_not_added(self):
         published = json.loads((ROOT / "quotes.json").read_text())
         data = batch(published[0]["text"])
@@ -106,7 +156,8 @@ class ReviewQueueTests(unittest.TestCase):
     def test_invalid_batch_does_not_partially_append_or_overwrite(self):
         review_queue.import_batch(batch(), self.directory)
         original = (self.directory / "queue.json").read_bytes()
-        for changes in ({"source_url": "http://example.com"}, {"context": ""},
+        for changes in ({"source_url": "http://example.com"}, {"context": " "}, {"context": None},
+                        {"context": 42}, {"context": "x" * 501},
                         {"source_published_at": "2026-02-30"}, {"evidence": {"notes": "Unsupported claim"}},
                         {"status": "approved"}):
             data = batch("A separate valid first candidate.")

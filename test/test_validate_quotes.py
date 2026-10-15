@@ -55,7 +55,7 @@ class QuoteFeedTests(unittest.TestCase):
             {"id": "bad id"}, {"id": ""}, {"id": "a" * 101}, {"id": 42},
             {"text": " "}, {"text": "a" * 3001}, {"text": None},
             {"kind": "paraphrase"}, {"kind": None},
-            {"context": " "}, {"context": "a" * 501}, {"context": []},
+            {"context": ""}, {"context": " "}, {"context": "a" * 501}, {"context": []},
             {"status": "pending"}, {"added_at": "2026-02-30"},
             {"added_at": "2026-2-03"}, {"added_at": "yesterday"}, {"added_at": None},
         ):

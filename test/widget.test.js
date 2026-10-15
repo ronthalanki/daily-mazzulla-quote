@@ -11,7 +11,7 @@ const cachePath = "/library/daily-mazzulla-quotes-v1.json";
 const feed = Array.from({ length: 7 }, (_, i) => ({ id: `quote-${i}`, text: `Quote ${i}`, source_url: `https://example.com/${i}` }));
 
 async function render({ now = "2026-10-13T10:00:00-04:00", data = feed, offline = false,
-  status = 200, files = new Map(), failWrite = false } = {}) {
+  status = 200, files = new Map(), failWrite = false, runsInApp = false } = {}) {
   const result = { files, logs: [] };
   class MockDate extends Date {
     constructor(...args) { super(...(args.length ? args : [now])); }
@@ -36,11 +36,14 @@ async function render({ now = "2026-10-13T10:00:00-04:00", data = feed, offline 
   };
   class MockWidget {
     addText(text) { this.text = text; return this.quoteText = { centerAlignText() { this.centered = true; } }; }
+    setPadding(top, leading, bottom, trailing) { this.padding = [top, leading, bottom, trailing]; }
+    async presentMedium() { result.preview = this; }
   }
   class MockColor { constructor(hex) { this.hex = hex; } static white() { return "white"; } }
   const context = {
     Date: MockDate, Request: MockRequest, FileManager: { local: () => fm }, ListWidget: MockWidget,
     Color: MockColor, Font: { systemFont: size => size },
+    config: { runsInApp },
     Script: { setWidget: widget => { result.widget = widget; }, complete: () => { result.complete = true; } },
     console: { log: message => result.logs.push(message) }
   };
@@ -49,7 +52,7 @@ async function render({ now = "2026-10-13T10:00:00-04:00", data = feed, offline 
   return result;
 }
 
-test("valid remote feed is cached and renders the original widget styling", async () => {
+test("valid remote feed is cached with Celtics styling and limited native fitting", async () => {
   const result = await render();
   assert.deepEqual(result.cache.feed, feed);
   assert.equal(result.cache.daily.date, "2026-10-13");
@@ -58,11 +61,28 @@ test("valid remote feed is cached and renders the original widget styling", asyn
   assert.equal(result.widget.backgroundColor.hex, "#007A33");
   assert.equal(result.widget.quoteText.textColor, "white");
   assert.equal(result.widget.quoteText.font, 16);
+  assert.equal(result.widget.quoteText.minimumScaleFactor, 0.75);
+  assert.equal(result.widget.quoteText.lineLimit, 0);
+  assert.deepEqual(result.widget.padding, [12, 12, 12, 12]);
   assert.equal(result.widget.quoteText.centered, true);
   assert.equal(result.request.timeoutInterval, 8);
   assert.equal(result.request.url, "https://raw.githubusercontent.com/ronthalanki/daily-mazzulla-quote/main/quotes.json");
   assert.equal(result.widget.refreshAfterDate.toISOString(), "2026-10-14T04:00:00.000Z");
   assert.equal(result.complete, true);
+  assert.equal(result.preview, undefined);
+});
+
+test("running in the app presents the same widget at medium size", async () => {
+  const result = await render({runsInApp: true});
+  assert.equal(result.preview, result.widget);
+  assert.equal(result.complete, true);
+});
+
+test("all original 39 entries retain their exact visible text", async () => {
+  for (const entry of repositoryFeed.slice(0, 39)) {
+    const result = await render({data: [entry]});
+    assert.equal(result.widget.text, entry.text);
+  }
 });
 
 test("offline first run and corrupt cache use genuine bundled quotes", async () => {
@@ -87,6 +107,7 @@ test("invalid remote feeds and HTTP errors never replace last-good quotes", asyn
     [{id: "bad", text: "Hello", source_url: "https://example.com\\@evil.test"}],
     [{id: "bad", text: "Hello", added_at: "yesterday"}],
     [{id: "bad", text: "Hello", kind: "unknown"}],
+    [{id: "bad", text: "Hello", context: ""}],
     [{id: "bad", text: "Hello", context: " "}],
     [{id: "bad", text: "Hello", context: 42}]];
   for (const data of badFeeds) {
@@ -161,19 +182,28 @@ test("failed cache writes keep the existing cache and still render", async () =>
   assert.ok(next.logs.some(log => log.startsWith("Could not save quote cache:")));
 });
 
-test("context and anecdote labels survive same-day snapshots and offline refresh", async () => {
+test("context leads unchanged quotes and labeled anecdotes through snapshots and offline refresh", async () => {
   for (const kind of ["quote", "anecdote"]) {
-    const entry = {id: "reviewed-example", text: "A short test entry.", kind,
+    const entry = {id: "reviewed-example", text: 'He said, "Stay ready," then left.', kind,
       context: "Context kept separate from the source wording.",
       source_url: "https://example.com/article", added_at: "2026-10-13"};
-    const expected = (kind === "anecdote" ? "Anecdote: " : "") + entry.text + "\n\n" + entry.context;
+    const body = kind === "anecdote" ? 'Anecdote: He said, "Stay ready," then left.'
+      : '“He said, "Stay ready," then left.”';
+    const expected = entry.context + " " + body;
     const first = await render({data: [entry]});
     assert.equal(first.widget.text, expected);
     assert.deepEqual(first.cache.daily.quote, entry);
     const midday = await render({files: first.files, data: [{...entry, context: "Revised context."}]});
     assert.equal(midday.widget.text, expected);
     const next = await render({files: first.files, offline: true, now: "2026-10-14T10:00:00-04:00"});
-    assert.equal(next.widget.text, (kind === "anecdote" ? "Anecdote: " : "") + entry.text + "\n\nRevised context.");
+    assert.equal(next.widget.text, "Revised context. " + body);
     assert.equal(next.widget.url, entry.source_url);
+  }
+});
+
+test("explicit kinds distinguish quotes and anecdotes even without optional context", async () => {
+  for (const [kind, expected] of [["quote", "“A short test entry.”"], ["anecdote", "Anecdote: A short test entry."]]) {
+    const result = await render({data: [{id: "reviewed-example", text: "A short test entry.", kind}]});
+    assert.equal(result.widget.text, expected);
   }
 });

@@ -48,8 +48,11 @@ def validate_urls(urls):
 def validate_candidate(candidate):
     if not isinstance(candidate, dict) or candidate.keys() != CANDIDATE_FIELDS:
         raise ValueError("candidate has missing or unsupported fields")
-    for key in ("text", "context", "editorial_reason", "source_title"):
+    for key in ("text", "editorial_reason", "source_title"):
         require_text(candidate[key], key)
+    context = candidate["context"]
+    if context != "":
+        require_text(context, "context")
     for key in ("source_published_at", "quote_date"):
         value = candidate[key]
         if value is not None:
@@ -59,7 +62,8 @@ def validate_candidate(candidate):
     # Reuse only feed shape/size validation. No taste, vocabulary, or word-count rules.
     validate_quotes([{
         "id": identifier(candidate["text"]), "added_at": "2000-01-01",
-        **{key: candidate[key] for key in ("kind", "text", "context", "source_url")},
+        **{key: candidate[key] for key in ("kind", "text", "source_url")},
+        **({"context": context} if context else {}),
     }])
     evidence = candidate["evidence"]
     if not isinstance(evidence, dict) or evidence.keys() != {"verification", "notes", "source_urls"}:
@@ -172,15 +176,22 @@ def markdown_text(value):
 def render_queue(queue):
     lines = ["# Mazzulla review queue", "",
              "Local review copy. `queue.json` is authoritative; use the decision command to record choices.", "",
-             "Approval here does not publish anything. Publishing requires an explicit user instruction.", ""]
+             "Approval here does not publish anything. Publishing requires an explicit user instruction.", "",
+             "Candidate numbers follow original import order across status groups. Widget previews show only the visible lead-in and text; review notes follow separately.", ""]
     for status in ("pending", "approved", "rejected"):
-        candidates = [item for item in queue["candidates"] if item["status"] == status]
+        candidates = [(number, item) for number, item in enumerate(queue["candidates"], start=1)
+                      if item["status"] == status]
         lines += [f"## {status.title()} ({len(candidates)})", ""]
-        for number, candidate in enumerate(candidates, start=1):
+        for number, candidate in candidates:
             evidence = candidate["evidence"]
+            text = ("Anecdote: " + candidate["text"] if candidate["kind"] == "anecdote"
+                    else "“" + candidate["text"] + "”")
+            # Match Scriptable's visible text, keeping evidence/editorial notes outside.
+            preview = (candidate["context"] + " " if candidate["context"] else "") + text
             lines += [f"### {number}. `{candidate['id']}` — {candidate['kind']}", "",
-                      markdown_text(candidate["text"]), "",
-                      "**Context:** " + markdown_text(candidate["context"]), "",
+                      "**Widget preview:**", ""]
+            lines += ["> " + line for line in markdown_text(preview).splitlines()]
+            lines += ["",
                       "**Why it fits:** " + markdown_text(candidate["editorial_reason"]), "",
                       "**Verification:** " + evidence["verification"].replace("_", " ") + ". "
                       + markdown_text(evidence["notes"]), "",
@@ -190,7 +201,8 @@ def render_queue(queue):
             for url in evidence["source_urls"]:
                 lines += [f"- <{url}>"]
             if candidate.get("decision_reason"):
-                lines += ["", "**Decision:** " + markdown_text(candidate["decision_reason"])]
+                label = "Review notes" if status == "pending" else "Decision"
+                lines += ["", f"**{label}:** " + markdown_text(candidate["decision_reason"])]
             lines += [""]
     lines += ["## Research history", ""]
     for run in reversed(queue["runs"]):
