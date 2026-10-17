@@ -238,5 +238,35 @@
     "kind": "anecdote",
     "source_url": "https://www.boston.com/sports/morning-sports-update/2026/01/13/joe-mazzulla-pacers-press-conference/",
     "added_at": "2026-10-15"
+  },
+  {
+    "id": "candidate-37241109c961c13f",
+    "text": "I go to bed questionable… I wake up probable",
+    "source_url": "https://nesn.com/boston-celtics/news/joe-mazzulla-jayson-tatum-wake-probable/7234e5c87324e3e471b2d73b",
+    "kind": "quote",
+    "added_at": "2026-10-17"
+  },
+  {
+    "id": "candidate-9a96b8c313189017",
+    "text": "No one’s been arrested",
+    "source_url": "https://fadeawayworld.net/nba/boston-celtics/joe-mazzulla-on-if-magic-have-gone-too-far-physicality",
+    "kind": "quote",
+    "added_at": "2026-10-17",
+    "context": "Asked whether Orlando’s playoff physicality had crossed the line:"
+  },
+  {
+    "id": "candidate-4f1da7ee51879915",
+    "text": "Mazzulla says his house permits surprise guillotine chokeholds. His younger son took it further, hiding behind the couch to ambush visitors; the family had to rein him in.",
+    "source_url": "https://www.barstoolsports.com/blog/3567652/anyone-can-get-guillotined-at-any-time-joe-mazzulla-explaining-his-house-is",
+    "kind": "anecdote",
+    "added_at": "2026-10-17"
+  },
+  {
+    "id": "candidate-a64d20ae9fe56766",
+    "text": "It’s been dark, but in a good way. You just gotta tap into your darkness. That’s it. You just gotta do it.",
+    "source_url": "https://www.nbcsportsboston.com/nba/boston-celtics/joe-mazzulla-tap-into-darkness-game-3-knicks/708713/",
+    "kind": "quote",
+    "added_at": "2026-10-17",
+    "context": "After Boston’s Game 3 win while still trailing the Knicks 2–1:"
   }
 ]
