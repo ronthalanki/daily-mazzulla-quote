@@ -11,7 +11,8 @@ const cachePath = "/library/daily-mazzulla-quotes-v1.json";
 const feed = Array.from({ length: 7 }, (_, i) => ({ id: `quote-${i}`, text: `Quote ${i}`, source_url: `https://example.com/${i}` }));
 
 async function render({ now = "2026-10-13T10:00:00-04:00", data = feed, offline = false,
-  status = 200, files = new Map(), failWrite = false, runsInApp = false } = {}) {
+  status = 200, files = new Map(), failRead = false, nullRead = false, failWrite = false, partialWrite = false,
+  failMove = false, runsInApp = false } = {}) {
   const result = { files, logs: [] };
   class MockDate extends Date {
     constructor(...args) { super(...(args.length ? args : [now])); }
@@ -30,18 +31,39 @@ async function render({ now = "2026-10-13T10:00:00-04:00", data = feed, offline 
     libraryDirectory: () => "/library",
     joinPath: (a, b) => `${a}/${b}`,
     fileExists: p => files.has(p),
-    readString: p => files.get(p),
-    writeString: (p, text) => { if (failWrite) throw new Error("disk full"); files.set(p, text); },
-    move: (from, to) => { files.set(to, files.get(from)); files.delete(from); }
+    readString: p => {
+      if (failRead) throw new Error("storage unavailable");
+      if (nullRead) return null;
+      return files.get(p);
+    },
+    writeString: (p, text) => {
+      if (partialWrite) files.set(p, text.slice(0, 20));
+      if (failWrite || partialWrite) throw new Error("disk full");
+      files.set(p, text);
+    },
+    move: (from, to) => {
+      if (failMove) throw new Error("could not replace cache");
+      if (!files.has(from)) throw new Error("source file is missing");
+      files.set(to, files.get(from)); files.delete(from);
+    }
   };
   class MockWidget {
     addText(text) { this.text = text; return this.quoteText = { centerAlignText() { this.centered = true; } }; }
     setPadding(top, leading, bottom, trailing) { this.padding = [top, leading, bottom, trailing]; }
     async presentMedium() { result.preview = this; }
   }
+  class MockAlert {
+    addAction(title) { this.action = title; }
+    async presentAlert() {
+      assert.ok(result.preview, "the medium preview is presented before diagnostics");
+      result.diagnostics = this;
+      return 0;
+    }
+  }
   class MockColor { constructor(hex) { this.hex = hex; } static white() { return "white"; } }
   const context = {
     Date: MockDate, Request: MockRequest, FileManager: { local: () => fm }, ListWidget: MockWidget,
+    Alert: MockAlert,
     Color: MockColor, Font: { systemFont: size => size },
     config: { runsInApp },
     Script: { setWidget: widget => { result.widget = widget; }, complete: () => { result.complete = true; } },
@@ -70,12 +92,21 @@ test("valid remote feed is cached with Celtics styling and limited native fittin
   assert.equal(result.widget.refreshAfterDate.toISOString(), "2026-10-14T04:00:00.000Z");
   assert.equal(result.complete, true);
   assert.equal(result.preview, undefined);
+  assert.equal(result.diagnostics, undefined);
 });
 
-test("running in the app presents the same widget at medium size", async () => {
+test("running in the app presents the same widget at medium size and then diagnostic status", async () => {
   const result = await render({runsInApp: true});
   assert.equal(result.preview, result.widget);
   assert.equal(result.complete, true);
+  assert.equal(result.diagnostics.title, "Mazzulla widget status");
+  assert.equal(result.diagnostics.action, "Done");
+  assert.match(result.diagnostics.message, /Script: 2026-10-21\.1/);
+  assert.match(result.diagnostics.message, /Local date: 2026-10-13/);
+  assert.match(result.diagnostics.message, /Feed: Remote feed \(7 entries\)/);
+  assert.match(result.diagnostics.message, /Previous saved date: none/);
+  assert.match(result.diagnostics.message, /Cache read: No saved cache/);
+  assert.match(result.diagnostics.message, /Cache save: Saved/);
 });
 
 test("all original 39 entries retain their exact visible text", async () => {
@@ -180,6 +211,61 @@ test("failed cache writes keep the existing cache and still render", async () =>
   assert.equal(next.files.get(cachePath), saved);
   assert.equal(next.complete, true);
   assert.ok(next.logs.some(log => log.startsWith("Could not save quote cache:")));
+});
+
+test("persistent cache save failures use calendar rotation instead of repeating the first unseen quote", async () => {
+  for (const failure of [{failWrite: true}, {partialWrite: true}, {failMove: true}]) {
+    for (const hasSavedCache of [false, true]) {
+      const files = hasSavedCache ? (await render()).files : new Map();
+      const saved = files.get(cachePath);
+      for (const day of [14, 15, 16]) {
+        const now = `2026-10-${day}T10:00:00-04:00`;
+        const result = await render({files, now, ...failure});
+        const calendarDay = Math.floor(Date.UTC(2026, 9, day) / 86400000);
+        assert.equal(result.widget.text, feed[calendarDay % feed.length].text);
+        assert.equal(files.get(cachePath), saved);
+        assert.equal(result.complete, true);
+        const rerun = await render({files, now: `2026-10-${day}T18:00:00-04:00`, ...failure});
+        assert.equal(rerun.widget.text, result.widget.text);
+      }
+    }
+  }
+});
+
+test("cache save failures preserve an already saved quote for today", async () => {
+  for (const failure of [{failWrite: true}, {partialWrite: true}, {failMove: true}]) {
+    const first = await render();
+    const saved = first.files.get(cachePath);
+    const next = await render({files: first.files, data: [feed[6]], ...failure});
+    assert.equal(next.widget.text, first.widget.text);
+    assert.equal(next.widget.url, first.widget.url);
+    assert.equal(first.files.get(cachePath), saved);
+  }
+});
+
+test("unreadable saved history is preserved and uses calendar rotation", async () => {
+  for (const failure of [{failRead: true}, {nullRead: true}]) {
+    const first = await render();
+    const savedFiles = new Map(first.files);
+    for (const day of [14, 15, 16]) {
+      const result = await render({files: first.files, ...failure, now: `2026-10-${day}T10:00:00-04:00`, runsInApp: true});
+      const calendarDay = Math.floor(Date.UTC(2026, 9, day) / 86400000);
+      assert.equal(result.widget.text, feed[calendarDay % feed.length].text);
+      assert.deepEqual(first.files, savedFiles);
+      assert.match(result.diagnostics.message, /Cache read: Unavailable:/);
+      assert.match(result.diagnostics.message, /Cache save: Skipped: saved history could not be read/);
+    }
+  }
+});
+
+test("in-app diagnostics report an offline saved feed, prior date, and save failure", async () => {
+  const first = await render();
+  const result = await render({files: first.files, offline: true, failWrite: true, runsInApp: true,
+    now: "2026-10-14T10:00:00-04:00"});
+  assert.match(result.diagnostics.message, /Feed: Saved feed \(download failed: offline\) \(7 entries\)/);
+  assert.match(result.diagnostics.message, /Previous saved date: 2026-10-13/);
+  assert.match(result.diagnostics.message, /Cache read: Loaded/);
+  assert.match(result.diagnostics.message, /Cache save: Failed: disk full/);
 });
 
 test("context leads unchanged quotes and labeled anecdotes through snapshots and offline refresh", async () => {

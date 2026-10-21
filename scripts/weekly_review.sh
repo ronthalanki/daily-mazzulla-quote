@@ -100,7 +100,7 @@ cat "$STAGING_DIR/import-result.json"
 ADDED=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["added"])' "$STAGING_DIR/import-result.json")
 if [[ "$ADDED" -gt 0 ]]; then
   PENDING=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pending"])' "$STAGING_DIR/import-result.json")
-  if ! finalize_inbox ready-for-review "$PENDING Mazzulla quote candidates are ready for review."; then
+  if ! finalize_inbox ready-for-review "New Mazzulla candidates: $ADDED ($PENDING pending); return to the original Mazzulla chat and ask to review quotes."; then
     printf 'Candidates are saved, but inbox finalization failed.\n'
     exit 1
   fi

@@ -7,7 +7,7 @@ An iOS **[Scriptable](https://scriptable.app/)** widget with a daily Joe Mazzull
 1. Install **Scriptable** from the App Store.
 2. Create a new script, or open your existing Mazzulla script.
 3. Copy/paste the complete contents of [scriptable.js](scriptable.js), replacing the old script if upgrading.
-4. Rename it (for example, `Mazzulla Quotes`) and run it once while online to see a medium preview.
+4. Rename it (for example, `Mazzulla Quotes`) and run it once while online to see a medium preview. Close the preview to see the script version, feed size, and cache status.
 5. Add a **medium** (wide rectangular) **Scriptable** widget to your Home Screen, then **Edit Widget** and choose that script. Your existing widget can keep using the same script.
 
 Future quote additions need no copy/paste. Changes to the script itself still require replacing the installed script.
@@ -20,7 +20,13 @@ Future quote additions need no copy/paste. Changes to the script itself still re
 - New reviewed entries show one compact paragraph: a brief context lead-in, a space, then the unchanged direct quote in quotation marks or a labeled anecdote. Tap a sourced entry to open its article. The original 39 entries retain their exact text, with no added quotation marks, context, or invented source links.
 - The medium layout uses 12 pt padding and 16 pt text, with [native scaling permitted down to 12 pt and no fixed line limit](https://docs.scriptable.app/widgettext/). Long entries can still overflow; actual device fit remains unverified. Run the script in the app to preview today's entry at medium size. The script does not trim or summarize text to fit.
 
-The request timeout is eight seconds. Cached data lives locally in Scriptable's library as `daily-mazzulla-quotes-v1.json`; clearing the app's data resets the displayed/seen history. If device storage cannot save that cache, the widget still renders, but cannot guarantee that day's selection survives another run.
+The request timeout is eight seconds. Cached data lives locally in Scriptable's library as `daily-mazzulla-quotes-v1.json`; clearing the app's data resets the displayed/seen history. If device storage cannot read or save that cache, the widget uses the calendar date to rotate instead of repeatedly choosing the first unseen quote. An available saved quote for today stays fixed even if saving fails. Without that snapshot, the fallback can change during the day if the feed changes or storage recovers. Unreadable history is left untouched.
+
+## If the same quote keeps appearing
+
+Replace the installed Scriptable script with the current [scriptable.js](scriptable.js), then run it inside Scriptable and close the medium preview. The **Mazzulla widget status** screen shows the script version, local date, selected quote ID, feed source and entry count, previous saved date, and whether reading/saving the cache worked. Version `2026-10-21.1` adds the storage-failure fallback and this status screen; updating the quote feed alone cannot update the installed script.
+
+If the preview changes but the Home Screen does not, edit the Home Screen widget and confirm it selects this script. iOS controls widget refresh timing, so a correct preview does not prove that the Home Screen has refreshed. If both keep repeating, report the quote and the status screen's local date, feed, and cache lines in the original Mazzulla conversation. The storage-failure case is covered by automated tests; the cause of a particular device's stale widget needs its status information.
 
 ## Weekly editorial review
 
@@ -66,7 +72,7 @@ The runner prevents overlapping reviews, gives research up to 30 minutes, and em
 
 A successful empty review still records coverage, the sources actually reviewed, and passed-over leads. Every batch explicitly reports a complete or failed outcome; a completed result must list at least one reviewed article, recording, or transcript. A normal CLI exit with a failed outcome is rejected, and a failed or invalid research result does not import candidates or advance successful history. Queue writes replace a complete temporary JSON file atomically; Markdown is derived afterward. If Markdown writing fails, the JSON remains authoritative and `render` repairs the view. Repeating an identical batch does not duplicate candidates or research history.
 
-When new candidates arrive, a second, brief ephemeral root session updates the originating Agent Inbox with only the pending count. Failures create a privacy-safe needs-action item. The existing configured completion callback handles notifications; the runner does not send a separate message. Finalizer failures leave the queue intact and are recorded in the local run log. Successful reviews with no additions do not trigger an inbox update.
+When new candidates arrive, a second, brief ephemeral root session updates the originating Agent Inbox with the new and pending counts and directions to return to the original Mazzulla conversation. The weekly job does not create a saved chat or post the candidate text into an existing chat. Open the original conversation and ask to review quotes; the assistant can read `review-queue/queue.json` and show the drafts there. On the scheduling machine, `review-queue/queue.md` is the readable queue. Failures create a privacy-safe needs-action item. The existing configured completion callback handles notifications; the runner does not send a separate message. Finalizer failures leave the queue intact and are recorded in the local run log. Successful reviews with no additions do not trigger an inbox update.
 
 ## Reviewing and publishing
 
