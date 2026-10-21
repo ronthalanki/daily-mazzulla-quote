@@ -7,26 +7,24 @@ An iOS **[Scriptable](https://scriptable.app/)** widget with a daily Joe Mazzull
 1. Install **Scriptable** from the App Store.
 2. Create a new script, or open your existing Mazzulla script.
 3. Copy/paste the complete contents of [scriptable.js](scriptable.js), replacing the old script if upgrading.
-4. Rename it (for example, `Mazzulla Quotes`) and run it once while online to see a medium preview. Close the preview to see the script version, feed size, and cache status.
+4. Rename it (for example, `Mazzulla Quotes`) and run it once while online to see a medium preview and save the quote collection for offline use.
 5. Add a **medium** (wide rectangular) **Scriptable** widget to your Home Screen, then **Edit Widget** and choose that script. Your existing widget can keep using the same script.
 
 Future quote additions need no copy/paste. Changes to the script itself still require replacing the installed script.
 
 ## Daily behavior
 
-- The widget reads [quotes.json](quotes.json) from this repository's `main` branch. It validates the whole feed and saves a local last-good copy; offline requests, invalid feeds, or server errors fall back to that copy. Four original quotes are bundled for a first run without internet.
-- The selected quote stays fixed for the local calendar date, even if the collection changes during the day. At the next daily selection, an unseen sourced quote takes priority. Multiple additions are shown in collection order, one per day; after those, the widget cycles through the full collection. These are quotes **new to the collection**, which may include older remarks reported again.
+- The widget reads [quotes.json](quotes.json) from this repository's `main` branch. It checks the fields used for display and saves a local last-good copy; offline requests, invalid feeds, or server errors fall back to that copy. Four original quotes are bundled for a first run without internet.
+- The local calendar date selects one position in the collection, advancing by one each day and wrapping at the end. With an unchanged collection, the quote stays the same throughout the day. New quotes join that normal rotation; additions or edits can change today's selection immediately. The script keeps no viewing history or saved daily selection.
 - Calendar dates drive rotation, so daylight-saving changes do not skip or repeat a rotation day. The widget requests a refresh after the next local midnight, but [iOS controls the actual refresh time](https://docs.scriptable.app/listwidget/#refreshafterdate).
 - New reviewed entries show one compact paragraph: a brief context lead-in, a space, then the unchanged direct quote in quotation marks or a labeled anecdote. Tap a sourced entry to open its article. The original 39 entries retain their exact text, with no added quotation marks, context, or invented source links.
 - The medium layout uses 12 pt padding and 16 pt text, with [native scaling permitted down to 12 pt and no fixed line limit](https://docs.scriptable.app/widgettext/). Long entries can still overflow; actual device fit remains unverified. Run the script in the app to preview today's entry at medium size. The script does not trim or summarize text to fit.
 
-The request timeout is eight seconds. Cached data lives locally in Scriptable's library as `daily-mazzulla-quotes-v1.json`; clearing the app's data resets the displayed/seen history. If device storage cannot read or save that cache, the widget uses the calendar date to rotate instead of repeatedly choosing the first unseen quote. An available saved quote for today stays fixed even if saving fails. Without that snapshot, the fallback can change during the day if the feed changes or storage recovers. Unreadable history is left untouched.
+The request timeout is eight seconds. Only successful downloads replace the saved feed, after a complete temporary file is written. If saving fails, the downloaded quotes still display; if neither a download nor a saved feed is available, the bundled quotes rotate instead. The feed lives locally in Scriptable's library as `daily-mazzulla-quotes-v1.json`. Upgrading reuses the previous script's saved feed offline and ignores its selection history. Clearing the app's data removes the saved feed.
 
 ## If the same quote keeps appearing
 
-Replace the installed Scriptable script with the current [scriptable.js](scriptable.js), then run it inside Scriptable and close the medium preview. The **Mazzulla widget status** screen shows the script version, local date, selected quote ID, feed source and entry count, previous saved date, and whether reading/saving the cache worked. Version `2026-10-21.1` adds the storage-failure fallback and this status screen; updating the quote feed alone cannot update the installed script.
-
-If the preview changes but the Home Screen does not, edit the Home Screen widget and confirm it selects this script. iOS controls widget refresh timing, so a correct preview does not prove that the Home Screen has refreshed. If both keep repeating, report the quote and the status screen's local date, feed, and cache lines in the original Mazzulla conversation. The storage-failure case is covered by automated tests; the cause of a particular device's stale widget needs its status information.
+Replace the installed Scriptable script with the current [scriptable.js](scriptable.js), then run it inside Scriptable to preview today's quote. Updating the quote feed alone cannot update the installed script. If the preview changes but the Home Screen does not, edit the Home Screen widget and confirm it selects this script. iOS controls widget refresh timing; calendar selection cannot force a Home Screen refresh, and the cause of a particular device's stale widget remains unconfirmed.
 
 ## Weekly editorial review
 
@@ -115,7 +113,7 @@ python3 -m unittest discover -s test -p 'test_*.py'
 npm test
 ```
 
-Tests cover feed schema/source validation, preservation of the original collection, queue decisions and deduplication, concurrent imports, interrupted writes, and cron-runner failure/timeout behavior with a fake Codex process. Widget tests cover compact text rendering, context/anecdote labels, native fitting configuration, in-app medium preview, feed/cache failure, daily stability, unseen-quote priority, and DST/year rollover. Tests do not fetch live reporting, prove editorial quality, exercise a real iPhone, establish text fit on a device, or prove when iOS will refresh. The pull-request workflow runs these checks without invoking live research.
+Tests cover feed schema/source validation, preservation of the original collection, queue decisions and deduplication, concurrent imports, interrupted writes, and cron-runner failure/timeout behavior with a fake Codex process. Widget tests cover compact text rendering, context/anecdote labels, native fitting configuration, in-app medium preview, feed/cache failure, offline upgrades, calendar rotation, feed changes, and DST/leap-day/year rollover. Tests do not fetch live reporting, prove editorial quality, exercise a real iPhone, establish text fit on a device, or prove when iOS will refresh. The pull-request workflow runs these checks without invoking live research.
 
 ## Customization and contributing
 
