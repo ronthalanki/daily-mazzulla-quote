@@ -71,7 +71,7 @@ path.write_text("{broken" if mode == "invalid" else pathlib.Path(os.environ["STU
         self.assertIn("--ephemeral", finalizer["args"])
         self.assertIn("--thread test-origin-thread", finalizer["prompt"])
         self.assertIn("ready-for-review", finalizer["prompt"])
-        self.assertIn("1 Mazzulla quote candidates are ready for review.", finalizer["prompt"])
+        self.assertIn("New Mazzulla candidates: 1 (1 pending); return to the original Mazzulla chat and ask to review quotes.", finalizer["prompt"])
         self.assertNotIn(batch()["candidates"][0]["text"], finalizer["prompt"])
         self.assertEqual((ROOT / "quotes.json").read_bytes(), feed)
 

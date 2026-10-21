@@ -1,6 +1,7 @@
 // Paste this whole file into Scriptable once. Quotes update from the JSON feed.
 const FEED_URL = "https://raw.githubusercontent.com/ronthalanki/daily-mazzulla-quote/main/quotes.json";
 const REQUEST_TIMEOUT_SECONDS = 8;
+const SCRIPT_VERSION = "2026-10-21.1";
 
 // A small first-run/offline fallback, copied unchanged from the original list.
 const FALLBACK_QUOTES = [
@@ -75,9 +76,24 @@ const cachePath = fm.joinPath(fm.libraryDirectory(), "daily-mazzulla-quotes-v1.j
 let cachedFeed;
 let cachedDaily;
 let seenSourceIds = [];
+let cacheContents;
+let cacheReadFailed = false;
+let cacheReadStatus = "No saved cache";
 try {
   if (fm.fileExists(cachePath)) {
-    const cache = JSON.parse(fm.readString(cachePath));
+    const contents = fm.readString(cachePath);
+    if (typeof contents !== "string") throw new Error("Saved cache could not be read.");
+    cacheContents = contents;
+  }
+} catch (error) {
+  // Do not replace history we could not read (for example, locked storage).
+  cacheReadFailed = true;
+  cacheReadStatus = "Unavailable: " + error.message;
+  console.log("Could not read quote cache: " + error.message);
+}
+try {
+  if (cacheContents !== undefined) {
+    const cache = JSON.parse(cacheContents);
     if (cache.version !== 1) throw new Error("Unknown cache version.");
     cachedFeed = validateFeed(cache.feed);
     if (Array.isArray(cache.seen_source_ids)) {
@@ -86,12 +102,15 @@ try {
     if (cache.daily && /^\d{4}-\d{2}-\d{2}$/.test(cache.daily.date)) {
       cachedDaily = { date: cache.daily.date, quote: validateFeed([cache.daily.quote])[0] };
     }
+    cacheReadStatus = "Loaded";
   }
 } catch (error) {
+  cacheReadStatus = "Invalid: " + error.message;
   console.log("Could not fully read quote cache: " + error.message);
 }
 
 let quotes = cachedFeed || FALLBACK_QUOTES;
+let feedStatus = cachedFeed ? "Saved feed" : "Bundled offline quotes";
 try {
   const request = new Request(FEED_URL);
   request.timeoutInterval = REQUEST_TIMEOUT_SECONDS;
@@ -100,7 +119,9 @@ try {
     throw new Error("Quote feed did not return HTTP 200.");
   }
   quotes = validateFeed(data);
+  feedStatus = "Remote feed";
 } catch (error) {
+  feedStatus += " (download failed: " + error.message + ")";
   console.log("Using saved/offline quotes: " + error.message);
 }
 
@@ -108,23 +129,33 @@ const today = new Date();
 const day = dateKey(today);
 // UTC arithmetic on local calendar components avoids 23/25-hour DST days.
 const calendarDay = Math.floor(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) / 86400000);
+const calendarQuote = quotes[((calendarDay % quotes.length) + quotes.length) % quotes.length];
+const savedToday = cachedDaily && cachedDaily.date === day;
 // Store the quote itself so an edited/removed feed entry cannot change it today.
 const unseenQuote = quotes.find(item => item.source_url && !seenSourceIds.includes(item.id));
-const quote = cachedDaily && cachedDaily.date === day
+let quote = savedToday
   ? cachedDaily.quote
-  : unseenQuote || quotes[((calendarDay % quotes.length) + quotes.length) % quotes.length];
+  : cacheReadFailed ? calendarQuote : unseenQuote || calendarQuote;
 if (quote.source_url && !seenSourceIds.includes(quote.id)) seenSourceIds.push(quote.id);
 seenSourceIds = seenSourceIds.filter(id => quotes.some(item => item.id === id));
 
-try {
-  // Write a complete temporary file before replacing the last-good cache.
-  const temporaryPath = cachePath + ".tmp";
-  fm.writeString(temporaryPath, JSON.stringify({
-    version: 1, feed: quotes, daily: { date: day, quote }, seen_source_ids: seenSourceIds
-  }));
-  fm.move(temporaryPath, cachePath);
-} catch (error) {
-  console.log("Could not save quote cache: " + error.message);
+let cacheSaveStatus = "Skipped: saved history could not be read";
+if (!cacheReadFailed) {
+  try {
+    // Write a complete temporary file before replacing the last-good cache.
+    const temporaryPath = cachePath + ".tmp";
+    fm.writeString(temporaryPath, JSON.stringify({
+      version: 1, feed: quotes, daily: { date: day, quote }, seen_source_ids: seenSourceIds
+    }));
+    fm.move(temporaryPath, cachePath);
+    cacheSaveStatus = "Saved";
+  } catch (error) {
+    // Unseen priority needs persisted history; without it the first unseen entry
+    // would repeat every day. Calendar rotation works without saving state.
+    if (!savedToday) quote = calendarQuote;
+    cacheSaveStatus = "Failed: " + error.message;
+    console.log("Could not save quote cache: " + error.message);
+  }
 }
 
 const widget = new ListWidget();
@@ -144,5 +175,21 @@ if (quote.source_url) widget.url = quote.source_url;
 // iOS decides the actual refresh time; this asks for the next local midnight.
 widget.refreshAfterDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
 Script.setWidget(widget);
-if (config.runsInApp) await widget.presentMedium();
+if (config.runsInApp) {
+  await widget.presentMedium();
+  const status = new Alert();
+  status.title = "Mazzulla widget status";
+  status.message = [
+    "Script: " + SCRIPT_VERSION,
+    "Local date: " + day,
+    "Quote: " + quote.id,
+    "Feed: " + feedStatus + " (" + quotes.length + " entries)",
+    "Previous saved date: " + (cachedDaily ? cachedDaily.date : "none"),
+    "Cache read: " + cacheReadStatus,
+    "Cache save: " + cacheSaveStatus,
+    "If the Home Screen still shows an older quote, check that its widget uses this script. iOS controls when it refreshes."
+  ].join("\n");
+  status.addAction("Done");
+  await status.presentAlert();
+}
 Script.complete();
