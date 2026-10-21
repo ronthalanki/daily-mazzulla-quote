@@ -8,33 +8,33 @@ process.env.TZ = "America/New_York";
 const code = fs.readFileSync(path.join(__dirname, "../scriptable.js"), "utf8");
 const repositoryFeed = JSON.parse(fs.readFileSync(path.join(__dirname, "../quotes.json"), "utf8"));
 const cachePath = "/library/daily-mazzulla-quotes-v1.json";
-const feed = Array.from({ length: 7 }, (_, i) => ({ id: `quote-${i}`, text: `Quote ${i}`, source_url: `https://example.com/${i}` }));
+const feed = Array.from({ length: 7 }, (_, i) => ({
+  id: "quote-" + i, text: "Quote " + i, source_url: "https://example.com/" + i
+}));
+const savedFiles = value => new Map([[cachePath, JSON.stringify(value)]]);
 
 async function render({ now = "2026-10-13T10:00:00-04:00", data = feed, offline = false,
-  status = 200, files = new Map(), failRead = false, nullRead = false, failWrite = false, partialWrite = false,
-  failMove = false, runsInApp = false } = {}) {
+  status = 200, files = new Map(), failRead = false, nullRead = false, failWrite = false,
+  partialWrite = false, failMove = false, runsInApp = false } = {}) {
   const result = { files, logs: [] };
   class MockDate extends Date {
     constructor(...args) { super(...(args.length ? args : [now])); }
-    static now() { return new Date(now).getTime(); }
   }
   class MockRequest {
     constructor(url) { result.request = this; this.url = url; }
     async loadJSON() {
       if (offline) throw new Error("offline");
-      this.response = { statusCode: status };
-      if (typeof data === "string") return JSON.parse(data);
-      return data;
+      this.response = status === null ? undefined : { statusCode: status };
+      return typeof data === "string" ? JSON.parse(data) : data;
     }
   }
   const fm = {
     libraryDirectory: () => "/library",
-    joinPath: (a, b) => `${a}/${b}`,
+    joinPath: (a, b) => a + "/" + b,
     fileExists: p => files.has(p),
     readString: p => {
       if (failRead) throw new Error("storage unavailable");
-      if (nullRead) return null;
-      return files.get(p);
+      return nullRead ? null : files.get(p);
     },
     writeString: (p, text) => {
       if (partialWrite) files.set(p, text.slice(0, 20));
@@ -52,34 +52,23 @@ async function render({ now = "2026-10-13T10:00:00-04:00", data = feed, offline 
     setPadding(top, leading, bottom, trailing) { this.padding = [top, leading, bottom, trailing]; }
     async presentMedium() { result.preview = this; }
   }
-  class MockAlert {
-    addAction(title) { this.action = title; }
-    async presentAlert() {
-      assert.ok(result.preview, "the medium preview is presented before diagnostics");
-      result.diagnostics = this;
-      return 0;
-    }
-  }
   class MockColor { constructor(hex) { this.hex = hex; } static white() { return "white"; } }
   const context = {
     Date: MockDate, Request: MockRequest, FileManager: { local: () => fm }, ListWidget: MockWidget,
-    Alert: MockAlert,
-    Color: MockColor, Font: { systemFont: size => size },
-    config: { runsInApp },
+    Color: MockColor, Font: { systemFont: size => size }, config: { runsInApp },
     Script: { setWidget: widget => { result.widget = widget; }, complete: () => { result.complete = true; } },
     console: { log: message => result.logs.push(message) }
   };
-  await vm.runInNewContext(`(async () => { ${code}\n })()`, context);
-  result.cache = files.has(cachePath) ? JSON.parse(files.get(cachePath)) : undefined;
+  await vm.runInNewContext("(async () => { " + code + "\n })()", context);
   return result;
 }
 
-test("valid remote feed is cached with Celtics styling and limited native fitting", async () => {
+test("remote feed is saved with Celtics styling, source link, and a midnight refresh request", async () => {
   const result = await render();
-  assert.deepEqual(result.cache.feed, feed);
-  assert.equal(result.cache.daily.date, "2026-10-13");
-  assert.equal(result.widget.text, result.cache.daily.quote.text);
-  assert.equal(result.widget.url, result.cache.daily.quote.source_url);
+  assert.deepEqual(JSON.parse(result.files.get(cachePath)), feed);
+  assert.equal(result.files.has(cachePath + ".tmp"), false);
+  assert.equal(result.widget.text, feed[5].text);
+  assert.equal(result.widget.url, feed[5].source_url);
   assert.equal(result.widget.backgroundColor.hex, "#007A33");
   assert.equal(result.widget.quoteText.textColor, "white");
   assert.equal(result.widget.quoteText.font, 16);
@@ -92,204 +81,153 @@ test("valid remote feed is cached with Celtics styling and limited native fittin
   assert.equal(result.widget.refreshAfterDate.toISOString(), "2026-10-14T04:00:00.000Z");
   assert.equal(result.complete, true);
   assert.equal(result.preview, undefined);
-  assert.equal(result.diagnostics, undefined);
 });
 
-test("running in the app presents the same widget at medium size and then diagnostic status", async () => {
-  const result = await render({runsInApp: true});
+test("running in the app presents the same widget at medium size", async () => {
+  const result = await render({ runsInApp: true });
   assert.equal(result.preview, result.widget);
   assert.equal(result.complete, true);
-  assert.equal(result.diagnostics.title, "Mazzulla widget status");
-  assert.equal(result.diagnostics.action, "Done");
-  assert.match(result.diagnostics.message, /Script: 2026-10-21\.1/);
-  assert.match(result.diagnostics.message, /Local date: 2026-10-13/);
-  assert.match(result.diagnostics.message, /Feed: Remote feed \(7 entries\)/);
-  assert.match(result.diagnostics.message, /Previous saved date: none/);
-  assert.match(result.diagnostics.message, /Cache read: No saved cache/);
-  assert.match(result.diagnostics.message, /Cache save: Saved/);
 });
 
-test("all original 39 entries retain their exact visible text", async () => {
+test("all original 39 entries retain their exact visible text without invented links", async () => {
   for (const entry of repositoryFeed.slice(0, 39)) {
-    const result = await render({data: [entry]});
+    const result = await render({ data: [entry] });
     assert.equal(result.widget.text, entry.text);
+    assert.equal(result.widget.url, undefined);
   }
 });
 
-test("offline first run and corrupt cache use genuine bundled quotes", async () => {
-  for (const cache of [undefined, "not json", JSON.stringify({version: 1, feed: []})]) {
-    const files = new Map(cache ? [[cachePath, cache]] : []);
-    const result = await render({ files, offline: true });
-    assert.ok(repositoryFeed.some(quote => quote.text === result.widget.text));
-    assert.equal(result.cache.feed.length, 4);
-  }
-});
-
-test("offline refresh rotates the last-good complete feed on the next day", async () => {
-  const first = await render();
-  const next = await render({ files: first.files, offline: true, now: "2026-10-14T10:00:00-04:00" });
-  assert.deepEqual(next.cache.feed, feed);
-  assert.notEqual(next.widget.text, first.widget.text);
-});
-
-test("invalid remote feeds and HTTP errors never replace last-good quotes", async () => {
-  const badFeeds = ["{broken", [], {}, [feed[0], feed[0]], [{id: "bad", text: " "}],
-    [{id: "bad", text: "Hello", source_url: "javascript:alert(1)"}],
-    [{id: "bad", text: "Hello", source_url: "https://example.com\\@evil.test"}],
-    [{id: "bad", text: "Hello", added_at: "yesterday"}],
-    [{id: "bad", text: "Hello", kind: "unknown"}],
-    [{id: "bad", text: "Hello", context: ""}],
-    [{id: "bad", text: "Hello", context: " "}],
-    [{id: "bad", text: "Hello", context: 42}]];
-  for (const data of badFeeds) {
-    const first = await render();
-    const next = await render({ files: first.files, data, now: "2026-10-14T10:00:00-04:00" });
-    assert.deepEqual(next.cache.feed, feed);
-    assert.ok(feed.some(quote => quote.text === next.widget.text));
-    assert.ok(next.logs.some(log => log.startsWith("Using saved/offline quotes:")));
-  }
-  const first = await render();
-  const next = await render({ files: first.files, data: [{id: "other", text: "Other"}], status: 500 });
-  assert.deepEqual(next.cache.feed, feed);
-});
-
-test("midday additions, edits, removals, and first reconnect preserve today's snapshot", async () => {
-  const first = await render();
-  const updated = [{ id: "new", text: "Entirely new quote" }];
-  const midday = await render({ files: first.files, data: updated, now: "2026-10-13T19:00:00-04:00" });
-  assert.equal(midday.widget.text, first.widget.text);
-  assert.deepEqual(midday.cache.feed, updated);
-  const tomorrow = await render({ files: first.files, offline: true, now: "2026-10-14T00:01:00-04:00" });
-  assert.equal(tomorrow.widget.text, updated[0].text);
-  const offlineFirst = await render({ offline: true });
-  const reconnected = await render({ files: offlineFirst.files, data: updated });
-  assert.equal(reconnected.widget.text, offlineFirst.widget.text);
-});
-
-test("rotation and requested local midnight stay correct across both DST changes and year rollover", async () => {
-  const legacy = feed.map(({id, text}) => ({id, text}));
-  for (const [start, nextDate, midnight] of [
-    ["2026-03-08T00:05:00-05:00", "2026-03-09T00:05:00-04:00", "2026-03-09T04:00:00.000Z"],
-    ["2026-11-01T00:05:00-04:00", "2026-11-02T00:05:00-05:00", "2026-11-02T05:00:00.000Z"],
-    ["2026-12-31T12:05:00-05:00", "2027-01-01T00:05:00-05:00", "2027-01-01T05:00:00.000Z"]
-  ]) {
-    const first = await render({ now: start, data: legacy });
-    assert.equal(first.widget.refreshAfterDate.toISOString(), midnight);
-    const next = await render({ now: nextDate, files: first.files, data: legacy });
-    assert.equal(feed.findIndex(q => q.text === next.widget.text),
-      (feed.findIndex(q => q.text === first.widget.text) + 1) % feed.length);
-  }
-  const before = await render({ now: "2026-11-01T01:30:00-04:00" });
-  const repeatedHour = await render({ now: "2026-11-01T01:30:00-05:00", files: before.files });
-  assert.equal(repeatedHour.widget.text, before.widget.text);
-});
-
-test("new sourced quotes are shown on successive days before normal rotation", async () => {
-  const legacy = feed.map(({id, text}) => ({id, text}));
-  const first = await render({ data: legacy });
-  const newQuotes = [
-    { id: "new-1", text: "The first new quote", source_url: "https://example.com/new-1" },
-    { id: "new-2", text: "The second new quote", source_url: "https://example.com/new-2" }
-  ];
-  const updated = [...legacy, ...newQuotes];
-  const midday = await render({ files: first.files, data: updated });
-  assert.equal(midday.widget.text, first.widget.text);
-  const tomorrow = await render({ files: first.files, data: updated, now: "2026-10-14T10:00:00-04:00" });
-  assert.equal(tomorrow.widget.text, newQuotes[0].text);
-  const following = await render({ files: first.files, data: updated, now: "2026-10-15T10:00:00-04:00" });
-  assert.equal(following.widget.text, newQuotes[1].text);
-  assert.deepEqual(following.cache.seen_source_ids, ["new-1", "new-2"]);
-  const normal = await render({ files: first.files, data: updated, now: "2026-10-16T10:00:00-04:00" });
-  const day = Math.floor(Date.UTC(2026, 9, 16) / 86400000);
-  assert.equal(normal.widget.text, updated[day % updated.length].text);
-});
-
-test("failed cache writes keep the existing cache and still render", async () => {
-  const first = await render();
-  const saved = first.files.get(cachePath);
-  const next = await render({ files: first.files, failWrite: true, now: "2026-10-14T10:00:00-04:00" });
-  assert.equal(next.files.get(cachePath), saved);
-  assert.equal(next.complete, true);
-  assert.ok(next.logs.some(log => log.startsWith("Could not save quote cache:")));
-});
-
-test("persistent cache save failures use calendar rotation instead of repeating the first unseen quote", async () => {
-  for (const failure of [{failWrite: true}, {partialWrite: true}, {failMove: true}]) {
-    for (const hasSavedCache of [false, true]) {
-      const files = hasSavedCache ? (await render()).files : new Map();
-      const saved = files.get(cachePath);
-      for (const day of [14, 15, 16]) {
-        const now = `2026-10-${day}T10:00:00-04:00`;
-        const result = await render({files, now, ...failure});
-        const calendarDay = Math.floor(Date.UTC(2026, 9, day) / 86400000);
-        assert.equal(result.widget.text, feed[calendarDay % feed.length].text);
-        assert.equal(files.get(cachePath), saved);
-        assert.equal(result.complete, true);
-        const rerun = await render({files, now: `2026-10-${day}T18:00:00-04:00`, ...failure});
-        assert.equal(rerun.widget.text, result.widget.text);
+test("reviewed quotes and anecdotes render unchanged wording and optional context online and offline", async () => {
+  for (const kind of ["quote", "anecdote"]) {
+    for (const context of [undefined, "He was asked about preparing for a game."]) {
+      const entry = { id: "reviewed", text: 'He said, "Stay ready," then left.', kind, context,
+        source_url: "https://example.com/article", added_at: "2026-10-13" };
+      const body = kind === "anecdote" ? "Anecdote: " + entry.text : "“" + entry.text + "”";
+      const expected = (context ? context + " " : "") + body;
+      const first = await render({ data: [entry] });
+      const offline = await render({ files: first.files, offline: true });
+      for (const result of [first, offline]) {
+        assert.equal(result.widget.text, expected);
+        assert.equal(result.widget.url, entry.source_url);
       }
     }
   }
 });
 
-test("cache save failures preserve an already saved quote for today", async () => {
-  for (const failure of [{failWrite: true}, {partialWrite: true}, {failMove: true}]) {
-    const first = await render();
-    const saved = first.files.get(cachePath);
-    const next = await render({files: first.files, data: [feed[6]], ...failure});
-    assert.equal(next.widget.text, first.widget.text);
-    assert.equal(next.widget.url, first.widget.url);
-    assert.equal(first.files.get(cachePath), saved);
+test("offline first run and corrupt caches use genuine bundled quotes without writing a cache", async () => {
+  for (const saved of [undefined, "not json", "null", "[]", '{"version":1,"feed":[]}']) {
+    const files = new Map(saved === undefined ? [] : [[cachePath, saved]]);
+    const before = new Map(files);
+    const result = await render({ files, offline: true });
+    assert.ok(repositoryFeed.slice(0, 39).some(quote => quote.text === result.widget.text));
+    assert.deepEqual(files, before);
+    assert.equal(result.complete, true);
   }
 });
 
-test("unreadable saved history is preserved and uses calendar rotation", async () => {
-  for (const failure of [{failRead: true}, {nullRead: true}]) {
-    const first = await render();
-    const savedFiles = new Map(first.files);
-    for (const day of [14, 15, 16]) {
-      const result = await render({files: first.files, ...failure, now: `2026-10-${day}T10:00:00-04:00`, runsInApp: true});
-      const calendarDay = Math.floor(Date.UTC(2026, 9, day) / 86400000);
-      assert.equal(result.widget.text, feed[calendarDay % feed.length].text);
-      assert.deepEqual(first.files, savedFiles);
-      assert.match(result.diagnostics.message, /Cache read: Unavailable:/);
-      assert.match(result.diagnostics.message, /Cache save: Skipped: saved history could not be read/);
+test("offline days rotate the last-good feed and leave it unchanged", async () => {
+  const first = await render();
+  const saved = first.files.get(cachePath);
+  const next = await render({ files: first.files, offline: true, now: "2026-10-14T10:00:00-04:00" });
+  assert.equal(next.widget.text, feed[6].text);
+  assert.equal(next.files.get(cachePath), saved);
+});
+
+test("invalid remote feeds and HTTP errors never replace the last-good feed", async () => {
+  const badFeeds = ["{broken", [], {}, null, [null], [{ text: " " }], [{ text: 42 }],
+    [{ text: "x".repeat(3001) }], [feed[0], { text: "Bad", context: 42 }],
+    [{ text: "Bad", context: "x".repeat(501) }], [{ text: "Bad", kind: "unknown" }],
+    [{ text: "Bad", source_url: 42 }], [{ text: "Bad", source_url: "javascript:alert(1)" }],
+    [{ text: "Bad", source_url: "https://example.com\\@evil.test" }],
+    [{ text: "Bad", source_url: "https://example.com/a b" }]];
+  const failures = [...badFeeds.map(data => ({ data })),
+    ...[404, 500, null].map(status => ({ status, data: [{ text: "Server error" }] }))];
+  for (const failure of failures) {
+    const files = savedFiles(feed);
+    const before = new Map(files);
+    const result = await render({ files, ...failure });
+    assert.equal(result.widget.text, feed[5].text);
+    assert.deepEqual(files, before);
+  }
+});
+
+test("offline upgrades reuse the old cache feed and ignore old selection history", async () => {
+  const oldCache = { version: 1, feed,
+    daily: { date: "2026-10-13", quote: { text: "Old pinned quote" } },
+    seen_source_ids: [] };
+  const files = savedFiles(oldCache);
+  const offline = await render({ files, offline: true });
+  assert.equal(offline.widget.text, feed[5].text);
+  assert.deepEqual(JSON.parse(files.get(cachePath)), oldCache);
+  await render({ files });
+  assert.deepEqual(JSON.parse(files.get(cachePath)), feed);
+});
+
+test("calendar rotation is stable within a day and visits the complete collection before repeating", async () => {
+  const files = new Map();
+  const selected = [];
+  for (let day = 13; day <= 20; day++) {
+    const morning = await render({ files, now: "2026-10-" + day + "T08:00:00-04:00" });
+    const evening = await render({ files, now: "2026-10-" + day + "T22:00:00-04:00" });
+    assert.equal(morning.widget.text, evening.widget.text);
+    selected.push(morning.widget.text);
+  }
+  assert.equal(new Set(selected.slice(0, 7)).size, feed.length);
+  assert.equal(selected[0], selected[7]);
+});
+
+test("feed changes apply immediately and new entries join normal calendar rotation", async () => {
+  const first = await render();
+  const updated = [...feed, { id: "new", text: "New quote", source_url: "https://example.com/new" }];
+  const midday = await render({ files: first.files, data: updated });
+  assert.equal(midday.widget.text, updated[3].text);
+  assert.notEqual(midday.widget.text, first.widget.text);
+  const replaced = await render({ files: first.files, data: [{ text: "Replacement" }] });
+  assert.equal(replaced.widget.text, "Replacement");
+});
+
+test("rotation and requested midnight handle both DST changes, leap day, and year rollover", async () => {
+  for (const [start, nextDate, midnight] of [
+    ["2026-03-08T00:05:00-05:00", "2026-03-09T00:05:00-04:00", "2026-03-09T04:00:00.000Z"],
+    ["2026-11-01T00:05:00-04:00", "2026-11-02T00:05:00-05:00", "2026-11-02T05:00:00.000Z"],
+    ["2028-02-28T12:05:00-05:00", "2028-02-29T00:05:00-05:00", "2028-02-29T05:00:00.000Z"],
+    ["2028-02-29T12:05:00-05:00", "2028-03-01T00:05:00-05:00", "2028-03-01T05:00:00.000Z"],
+    ["2026-12-31T12:05:00-05:00", "2027-01-01T00:05:00-05:00", "2027-01-01T05:00:00.000Z"]
+  ]) {
+    const first = await render({ now: start });
+    const next = await render({ now: nextDate });
+    assert.equal(first.widget.refreshAfterDate.toISOString(), midnight);
+    assert.equal(feed.findIndex(q => q.text === next.widget.text),
+      (feed.findIndex(q => q.text === first.widget.text) + 1) % feed.length);
+  }
+  const before = await render({ now: "2026-11-01T01:30:00-04:00" });
+  const repeatedHour = await render({ now: "2026-11-01T01:30:00-05:00" });
+  assert.equal(repeatedHour.widget.text, before.widget.text);
+});
+
+test("failed or interrupted cache saves preserve the old file and still display the downloaded feed", async () => {
+  for (const failure of [{ failWrite: true }, { partialWrite: true }, { failMove: true }]) {
+    for (const files of [new Map(), savedFiles([{ text: "Previously saved quote" }])]) {
+      const saved = files.get(cachePath);
+      const first = await render({ files, ...failure });
+      const next = await render({ files, ...failure, now: "2026-10-14T10:00:00-04:00" });
+      assert.equal(first.widget.text, feed[5].text);
+      assert.equal(next.widget.text, feed[6].text);
+      assert.equal(files.get(cachePath), saved);
+      assert.equal(next.complete, true);
     }
   }
 });
 
-test("in-app diagnostics report an offline saved feed, prior date, and save failure", async () => {
-  const first = await render();
-  const result = await render({files: first.files, offline: true, failWrite: true, runsInApp: true,
-    now: "2026-10-14T10:00:00-04:00"});
-  assert.match(result.diagnostics.message, /Feed: Saved feed \(download failed: offline\) \(7 entries\)/);
-  assert.match(result.diagnostics.message, /Previous saved date: 2026-10-13/);
-  assert.match(result.diagnostics.message, /Cache read: Loaded/);
-  assert.match(result.diagnostics.message, /Cache save: Failed: disk full/);
-});
-
-test("context leads unchanged quotes and labeled anecdotes through snapshots and offline refresh", async () => {
-  for (const kind of ["quote", "anecdote"]) {
-    const entry = {id: "reviewed-example", text: 'He said, "Stay ready," then left.', kind,
-      context: "Context kept separate from the source wording.",
-      source_url: "https://example.com/article", added_at: "2026-10-13"};
-    const body = kind === "anecdote" ? 'Anecdote: He said, "Stay ready," then left.'
-      : '“He said, "Stay ready," then left.”';
-    const expected = entry.context + " " + body;
-    const first = await render({data: [entry]});
-    assert.equal(first.widget.text, expected);
-    assert.deepEqual(first.cache.daily.quote, entry);
-    const midday = await render({files: first.files, data: [{...entry, context: "Revised context."}]});
-    assert.equal(midday.widget.text, expected);
-    const next = await render({files: first.files, offline: true, now: "2026-10-14T10:00:00-04:00"});
-    assert.equal(next.widget.text, "Revised context. " + body);
-    assert.equal(next.widget.url, entry.source_url);
-  }
-});
-
-test("explicit kinds distinguish quotes and anecdotes even without optional context", async () => {
-  for (const [kind, expected] of [["quote", "“A short test entry.”"], ["anecdote", "Anecdote: A short test entry."]]) {
-    const result = await render({data: [{id: "reviewed-example", text: "A short test entry.", kind}]});
-    assert.equal(result.widget.text, expected);
+test("unreadable caches use the remote feed, or bundled quotes if also offline", async () => {
+  for (const failure of [{ failRead: true }, { nullRead: true }]) {
+    const files = savedFiles(feed);
+    const before = new Map(files);
+    const offline = await render({ files, offline: true, ...failure });
+    assert.ok(repositoryFeed.some(q => q.text === offline.widget.text));
+    assert.deepEqual(files, before);
+    const online = await render({ files, ...failure });
+    assert.equal(online.widget.text, feed[5].text);
+    assert.equal(online.complete, true);
   }
 });
