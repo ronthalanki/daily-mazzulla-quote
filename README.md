@@ -40,13 +40,15 @@ The private queue lives on the scheduling machine:
 - `review-queue/queue.md` is the readable review copy, with stable candidate IDs and candidate numbers that retain the original import order across status groups. Each widget preview shows the actual visible text as one paragraph: context lead-in, then direct quote or labeled anecdote. It previews wording, not the device's wrapping or fit. Source, verification, and editorial notes follow outside the preview. It can be regenerated; edits to this Markdown do not change decisions.
 - `review-queue/logs/` contains local execution logs.
 
-The whole directory is gitignored. Pending, approved, and rejected candidates remain in the history so later research can honor decisions and avoid repeats. Nothing is posted to GitHub by the scheduled job, and no ChatGPT Page or built-in scheduled app chat is created.
+The whole directory is gitignored. Pending, approved, and rejected candidates remain in the history so later research can honor decisions and avoid repeats. `review-queue/pr-state.json` records PR creation intents, feedback fingerprints, delivery attempts, and handler acknowledgements. Private research notes, queue decisions, and logs are never copied into PRs.
 
-After the user explicitly approves particular candidates and their wording/context, the assistant records that decision and appends only the approved entries to `quotes.json`. It validates the feed, reviews the diff, and publishes through the repository's normal GitHub process. The widget consumes additions once they are on `main`. Rejected or pending entries never belong in the feed. Approval in the local queue alone does not perform a GitHub write.
+After research, the trusted host creates a **quote-review pull request** with proposed `quotes.json` additions, stable candidate numbers, exact widget wording, and public sources. Comment on the PR, a changed line, or a submitted review to request revisions. An hourly watcher sends new or edited feedback from `ronthalanki` to the original Mazzulla session; the assistant revises the branch and replies there. The user **merges the PR to publish**. Closing it without merging leaves the candidates unpublished and prevents automatic reproposal. The shared local `main` checkout stays unchanged throughout creation and revision; the widget consumes additions once merged into remote `main`.
+
+Merge reconciliation reads the actual merge commit and reviewed head before recording publication in the private queue. It preserves original candidate wording, IDs, evidence, and concurrent discoveries; final reviewed wording is saved separately in `publication.entry`. Excluded candidates are not approved, and a rejected candidate found in a merge is flagged without changing its rejection. Local approval alone is not publication.
 
 ## Running the weekly job
 
-The scheduling machine needs Linux, Bash, Python 3.12+, `flock`, `timeout`, and an installed, authenticated Codex CLI supporting `exec --ephemeral`, live web search, and structured output. The job uses the account and model already configured for that CLI. Account usage limits apply; the machine, network, and authentication must remain available.
+The scheduling machine needs Linux, Bash, Python 3.12+, `flock`, `timeout`, authenticated `gh` with repository write access, and an installed, authenticated Codex CLI supporting `exec --ephemeral`, live web search, structured output, and `queue --thread --message`. The job uses the account and model already configured for that CLI. Account usage limits apply; the machine, network, and authentication must remain available.
 
 Create `review-queue/cron.env` locally with the originating thread ID for the existing Agent Inbox integration:
 
@@ -60,35 +62,60 @@ Run a review manually with:
 bash scripts/weekly_review.sh
 ```
 
-The installed schedule is Monday at **13:17 UTC** on the UTC host. A matching crontab entry uses an absolute repository path:
+Research runs Monday at **13:17 UTC**; PR feedback is checked hourly at **:37** on the UTC host. Matching crontab entries use an absolute repository path:
 
 ```cron
 17 13 * * 1 /bin/bash /absolute/path/daily-mazzulla-quote/scripts/weekly_review.sh
+37 * * * * /bin/bash /absolute/path/daily-mazzulla-quote/scripts/watch_quote_reviews.sh
 ```
 
 The runner prevents overlapping reviews, gives research up to 30 minutes, and embeds validated feed/queue snapshots directly into the research prompt. The research session runs from a temporary directory with the read-only sandbox and uses web tools without local shell/file reads. A trusted host process validates its final batch and imports candidates as pending. Importing rechecks the current queue under a lock, deduplicates normalized text against the feed and all candidate statuses, and preserves existing decisions. Editorial review also checks less literal duplicates such as another account of the same incident.
 
 A successful empty review still records coverage, the sources actually reviewed, and passed-over leads. Every batch explicitly reports a complete or failed outcome; a completed result must list at least one reviewed article, recording, or transcript. A normal CLI exit with a failed outcome is rejected, and a failed or invalid research result does not import candidates or advance successful history. Queue writes replace a complete temporary JSON file atomically; Markdown is derived afterward. If Markdown writing fails, the JSON remains authoritative and `render` repairs the view. Repeating an identical batch does not duplicate candidates or research history.
 
-When new candidates arrive, a second, brief ephemeral root session updates the originating Agent Inbox with the new and pending counts and directions to return to the original Mazzulla conversation. The weekly job does not create a saved chat or post the candidate text into an existing chat. Open the original conversation and ask to review quotes; the assistant can read `review-queue/queue.json` and show the drafts there. On the scheduling machine, `review-queue/queue.md` is the readable queue. Failures create a privacy-safe needs-action item. The existing configured completion callback handles notifications; the runner does not send a separate message. Finalizer failures leave the queue intact and are recorded in the local run log. Successful reviews with no additions do not trigger an inbox update.
+When a new review PR is created or recovered after an interrupted write, a brief ephemeral root finalizer updates the originating Agent Inbox with the PR link. Review and revision happen on GitHub; returning to the original chat is unnecessary. The existing completion callback sends the privacy-safe notification. Failures create a needs-action item through that same finalizer; no direct webhook is used. Finalizer failures leave the queue and PR intact and are recorded in the local run log. Empty research runs still recover incomplete PR creation before finishing. After a review PR closes or merges, a conditional root finalizer clears only its exact generated review notice; it preserves unrelated inbox items and serializes with the weekly runner. Cleanup retries after finalizer failure. The inbox CLI has no compare-and-swap operation, so unrelated manual inbox changes made at that exact instant remain a small race limitation.
+
+The hourly watcher uses paginated GitHub reads without a model call when there is no new feedback. It ignores other authors, pending draft reviews, and assistant replies marked `<!-- mazzulla-agent:… -->`, including replies made with the user's account. It collects comments, inline review comments, submitted reviews, and edited bodies into one durable batch per PR. A successful `codex queue` delivery waits for a handler acknowledgement. Failed or uncertain delivery retries at most three times, no sooner than hourly, using the same batch ID. `begin` claims the batch once; `ack` advances handled fingerprints only after verified completion. These safeguards limit duplicate processing; they do not promise exactly-once delivery. Missing acknowledgement after 24 hours, delivery exhaustion, and reconciliation conflicts require attention. No new batches are queued for that PR while its prior batch remains active.
+
+The trusted [feedback handler instructions](scripts/quote_review_handler.md) explain authorization, source accuracy, safe branch updates, generated reply markers, and recovery. A handler failure leaves its claim intact. Inspect the remote effects and confirm the prior handler stopped before explicitly retrying. Keep this checkout on the deployed automation version; cron reads scripts from its stable `main` directory.
 
 ## Reviewing and publishing
 
-Use the rendered queue to review evidence and refer to candidates by their stable IDs. The assistant can import a separately researched historical batch with the same fields as [the batch schema](scripts/review_batch.schema.json); the weekly five-candidate limit does not constrain a manually reviewed historical batch:
+Create a review PR for pending candidates, run a poll, or reconcile merged PRs manually:
+
+```sh
+python3 scripts/quote_review_pr.py create
+bash scripts/watch_quote_reviews.sh
+python3 scripts/quote_review_pr.py reconcile
+```
+
+Creation is recoverable: a deterministic branch and validated manifest identify the batch, private intent precedes external writes, and all managed PR history is checked before proposing candidates. A lost branch or PR create response is reconciled on the next run. New discoveries and previously closed PRs are kept separate. Creation reads remote `main`; revisions rebuild the proposed feed from the latest remote main and update the branch with a normal fast-forward check, preserving newer published entries. GitHub conflicts or ambiguous responses must be read and reconciled before retrying, never force-pushed.
+
+Use the rendered private queue for evidence and refer to candidates by stable IDs/numbers. Historical imports use the same [batch schema](scripts/review_batch.schema.json):
 
 ```sh
 python3 scripts/review_queue.py import /path/to/researched-batch.json
+python3 scripts/quote_review_pr.py create
 python3 scripts/review_queue.py render
 ```
 
-Record a user's explicit approval or rejection with a reason:
+Explicit local decisions remain available, but they neither update a review PR nor publish. Keep any active PR consistent with a rejection before merging:
 
 ```sh
-python3 scripts/review_queue.py decide candidate-ID approved --reason "User approved this wording and context."
 python3 scripts/review_queue.py decide candidate-ID rejected --reason "User's reason for passing on this candidate."
 ```
 
-These commands only update the local review queue. For publication, append approved records to `quotes.json`, leaving existing IDs stable. Every new record requires:
+Recovery commands (use the full batch ID from the private state/log):
+
+```sh
+# Only after inspecting prior remote effects and confirming its handler stopped:
+python3 scripts/quote_review_pr.py retry feedback-BATCH_ID
+# The next hourly poll retries delivery. Handler-only claim and acknowledgement:
+python3 scripts/quote_review_pr.py begin feedback-BATCH_ID --owner UNIQUE_TURN_TOKEN
+python3 scripts/quote_review_pr.py ack feedback-BATCH_ID --owner UNIQUE_TURN_TOKEN
+```
+
+Proposed feed entries keep stable IDs throughout editorial revision. Every new record requires:
 
 | Field | Meaning |
 | --- | --- |
@@ -101,7 +128,7 @@ These commands only update the local review queue. For publication, append appro
 
 Source titles, evidence notes, editorial reasoning, and actual remark/publication dates stay in the review queue. The original 39 records are grandfathered without invented source metadata. Intentional reviewed corrections remain possible; the migration regression expectation should be updated when making one.
 
-Before publishing, validate the complete feed, inspect the diff for only the approved additions/corrections, and run the checks below. A passing validator checks structure, IDs, source URLs, and dates; it does not establish authenticity or user approval. Keep the private queue and logs out of commits. If a GitHub write conflicts or fails, read the current feed and reconcile the reviewed IDs before retrying, so an uncertain write does not duplicate or overwrite entries.
+Before merging, validate the complete feed, inspect the diff for only the reviewed additions/corrections, and run the checks below. A passing validator checks structure, IDs, source URLs, and dates; it does not establish authenticity or user approval. Keep the private queue and logs out of commits. If a GitHub write conflicts or fails, read the current feed and reconcile the reviewed IDs before retrying, so an uncertain write does not duplicate or overwrite entries.
 
 ## Development and verification
 
@@ -113,7 +140,7 @@ python3 -m unittest discover -s test -p 'test_*.py'
 npm test
 ```
 
-Tests cover feed schema/source validation, preservation of the original collection, queue decisions and deduplication, concurrent imports, interrupted writes, and cron-runner failure/timeout behavior with a fake Codex process. Widget tests cover compact text rendering, context/anecdote labels, native fitting configuration, in-app medium preview, feed/cache failure, offline upgrades, calendar rotation, feed changes, and DST/leap-day/year rollover. Tests do not fetch live reporting, prove editorial quality, exercise a real iPhone, establish text fit on a device, or prove when iOS will refresh. The pull-request workflow runs these checks without invoking live research.
+Tests cover feed schema/source validation, preservation of the original collection, queue decisions and deduplication, concurrent imports, interrupted writes, and cron-runner failure/timeout behavior with a fake Codex process. Mocked PR workflow tests cover paginated feedback, edited/draft/generated comments, delivery failure and ambiguity, claim/ack deduplication, closed and merged PRs, recoverable creation, and preservation of newer main entries and private decisions. They do not call live GitHub, queue a real session, or send notifications. Widget tests cover compact text rendering, context/anecdote labels, native fitting configuration, in-app medium preview, feed/cache failure, offline upgrades, calendar rotation, feed changes, and DST/leap-day/year rollover. Tests do not fetch live reporting, prove editorial quality, exercise a real iPhone, establish text fit on a device, or prove when iOS will refresh. The pull-request workflow runs these checks without invoking live research.
 
 ## Customization and contributing
 

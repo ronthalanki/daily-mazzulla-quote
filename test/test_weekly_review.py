@@ -39,7 +39,15 @@ path = pathlib.Path(args[args.index("--output-last-message") + 1])
 path.write_text("{broken" if mode == "invalid" else pathlib.Path(os.environ["STUB_BATCH"]).read_text())
 ''')
         self.stub.chmod(0o700)
-        self.environment = {**os.environ, "MAZZULLA_REVIEW_DIR": str(self.queue),
+        self.pr_stub = self.directory / "pr-stub.py"
+        self.pr_stub.write_text('''import json, os, pathlib, sys
+if os.environ.get("STUB_PR_FAIL"):
+    raise SystemExit(1)
+queue = pathlib.Path(sys.argv[sys.argv.index("--queue-dir") + 1])
+items = json.loads((queue / "queue.json").read_text())["candidates"]
+print(json.dumps({"created": bool(items), "url": "https://github.com/ronthalanki/daily-mazzulla-quote/pull/123" if items else None}))
+''')
+        self.environment = {**os.environ, "MAZZULLA_PR_SCRIPT": str(self.pr_stub), "MAZZULLA_REVIEW_DIR": str(self.queue),
                             "MAZZULLA_CODEX_BIN": str(self.stub), "MAZZULLA_ORIGIN_THREAD": "test-origin-thread",
                             "STUB_CALL_LOG": str(self.calls), "STUB_BATCH": str(self.batch),
                             "MAZZULLA_REVIEW_TIMEOUT_SECONDS": "1", "MAZZULLA_FINALIZER_TIMEOUT_SECONDS": "2"}
@@ -71,7 +79,7 @@ path.write_text("{broken" if mode == "invalid" else pathlib.Path(os.environ["STU
         self.assertIn("--ephemeral", finalizer["args"])
         self.assertIn("--thread test-origin-thread", finalizer["prompt"])
         self.assertIn("ready-for-review", finalizer["prompt"])
-        self.assertIn("New Mazzulla candidates: 1 (1 pending); return to the original Mazzulla chat and ask to review quotes.", finalizer["prompt"])
+        self.assertIn("Mazzulla candidates are ready for review: https://github.com/ronthalanki/daily-mazzulla-quote/pull/123; comment to revise and merge to publish.", finalizer["prompt"])
         self.assertNotIn(batch()["candidates"][0]["text"], finalizer["prompt"])
         self.assertEqual((ROOT / "quotes.json").read_bytes(), feed)
 
@@ -109,6 +117,39 @@ path.write_text("{broken" if mode == "invalid" else pathlib.Path(os.environ["STU
         self.batch.write_text(json.dumps(data))
         self.assertNotEqual(self.run_runner().returncode, 0)
         self.assertEqual((self.queue / "queue.json").read_bytes(), original)
+        self.assertIn("needs-action", self.read_calls()[-1]["prompt"])
+
+    def test_pr_failure_preserves_imported_candidates_and_notifies_attention(self):
+        self.assertNotEqual(self.run_runner(STUB_PR_FAIL="1").returncode, 0)
+        queue = json.loads((self.queue / "queue.json").read_text())
+        self.assertEqual(len(queue["candidates"]), 1)
+        self.assertEqual(queue["candidates"][0]["status"], "pending")
+        self.assertIn("needs-action", self.read_calls()[-1]["prompt"])
+
+    def test_watcher_without_feedback_does_not_start_codex(self):
+        self.pr_stub.write_text('import json\nprint(json.dumps({"queued": 0, "needs_attention": []}))\n')
+        result = subprocess.run(["bash", str(ROOT / "scripts/watch_quote_reviews.sh")],
+                                env=self.environment, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.calls.exists())
+
+    def test_closed_pr_cleanup_is_conditional_and_retriable(self):
+        self.pr_stub.write_text('import json\nprint(json.dumps({"queued": 0, "needs_attention": [], "closed_prs": [{"number": 123, "url": "https://github.com/ronthalanki/daily-mazzulla-quote/pull/123"}]}))\n')
+        result = subprocess.run(["bash", str(ROOT / "scripts/watch_quote_reviews.sh")],
+                                env=self.environment, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        prompt = self.read_calls()[-1]["prompt"]
+        self.assertIn("conditional cleanup", prompt)
+        self.assertIn("ready-for-review", prompt)
+        self.assertIn("pull/123", prompt)
+        self.assertIn("test-origin-thread", prompt)
+        self.assertIn("Preserve unrelated items", prompt)
+
+    def test_watcher_failure_uses_existing_inbox_finalizer(self):
+        self.pr_stub.write_text("raise SystemExit(1)\n")
+        result = subprocess.run(["bash", str(ROOT / "scripts/watch_quote_reviews.sh")],
+                                env=self.environment, capture_output=True, text=True, timeout=10)
+        self.assertNotEqual(result.returncode, 0)
         self.assertIn("needs-action", self.read_calls()[-1]["prompt"])
 
     def test_overlapping_runner_exits_without_research(self):

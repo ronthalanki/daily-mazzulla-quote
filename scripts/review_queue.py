@@ -121,6 +121,12 @@ def load_queue(directory):
         if (candidate.get("id") != identifier(candidate["text"]) or candidate["id"] in ids
                 or candidate.get("status") not in STATUSES):
             raise ValueError("invalid queue ID or status")
+        if "publication" in candidate:
+            publication = candidate["publication"]
+            if (not isinstance(publication, dict) or not {"pr", "url", "merge_commit", "merged_at", "entry"} <= publication.keys()
+                    or not isinstance(publication["entry"], dict) or publication["entry"].get("id") != candidate["id"]):
+                raise ValueError("invalid candidate publication record")
+            validate_quotes([publication["entry"]])
         ids.add(candidate["id"])
         if candidate["status"] != "pending" or candidate.get("decision_reason") is not None:
             require_text(candidate.get("decision_reason"), "decision reason")
@@ -239,7 +245,8 @@ def import_batch(batch, directory, feed_path=ROOT / "quotes.json"):
             atomic_write(directory / "queue.md", render_queue(queue))
             return {"added": 0, "duplicates": 0, "already_imported": True,
                     "pending": sum(item["status"] == "pending" for item in queue["candidates"])}
-        known_texts = {normalized(item["text"]) for item in published + queue["candidates"]}
+        reviewed_entries = [item["publication"]["entry"] for item in queue["candidates"] if item.get("publication")]
+        known_texts = {normalized(item["text"]) for item in published + queue["candidates"] + reviewed_entries}
         added_ids = []
         completed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         for candidate in batch["candidates"]:
