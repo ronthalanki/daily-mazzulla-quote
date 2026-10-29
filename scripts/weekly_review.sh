@@ -10,6 +10,7 @@ mkdir -p -- "$QUEUE_DIR/logs"
 if [[ -f "$QUEUE_DIR/cron.env" ]]; then
   source "$QUEUE_DIR/cron.env"
 fi
+export MAZZULLA_ORIGIN_THREAD
 CODEX_EXECUTABLE=${MAZZULLA_CODEX_BIN:-codex}
 RESEARCH_TIMEOUT=${MAZZULLA_REVIEW_TIMEOUT_SECONDS:-1800}
 FINALIZER_TIMEOUT=${MAZZULLA_FINALIZER_TIMEOUT_SECONDS:-120}
@@ -21,33 +22,11 @@ STAGING_DIR=$(mktemp -d "${TMPDIR:-/tmp}/mazzulla-review.XXXXXXXX")
 trap 'rm -rf -- "$STAGING_DIR"' EXIT
 printf 'Research started at %s\n' "$(date -u --iso-8601=seconds)"
 
-finalize_inbox() {
-  local state=$1
-  local summary=$2
-  if [[ -z "${MAZZULLA_ORIGIN_THREAD:-}" ]]; then
-    printf 'Inbox finalization failed: configure MAZZULLA_ORIGIN_THREAD in review-queue/cron.env.\n'
-    return 1
-  fi
-  # Build a trusted command with shell quoting; no web/model output enters it.
-  python3 - "$MAZZULLA_ORIGIN_THREAD" "$state" "$summary" >"$STAGING_DIR/finalizer.txt" <<'PY'
-import shlex
-import sys
-command = shlex.join(["codex-inbox", "set", "--thread", sys.argv[1], "--project",
-                      "daily-mazzulla-quote", sys.argv[2], sys.argv[3]])
-print("You are the ephemeral root finalizer for a completed local cron run. Run exactly this trusted command:")
-print(command)
-print("Do no other work: no research, file inspection, code changes, agents, or manual notifications. "
-      "Do not resolve the item first. Then finish with a short confirmation. The existing configured "
-      "agent-turn-complete callback handles notification. Do not modify or invoke that callback manually.")
-PY
-  timeout --kill-after=10s "${FINALIZER_TIMEOUT}s" "$CODEX_EXECUTABLE" exec \
-    --ephemeral --skip-git-repo-check --cd "$STAGING_DIR" --color never \
-    - <"$STAGING_DIR/finalizer.txt"
-}
+source "$REPO_ROOT/scripts/review_inbox.sh"
 
 report_failure() {
   local status=$1
-  printf 'Research failed: %s. Published feed and prior decisions are unchanged.\n' "$status"
+  printf 'Weekly review failed: %s. Published feed and prior decisions are unchanged.\n' "$status"
   finalize_inbox needs-action "The weekly quote review needs attention; check its local run log." || \
     printf 'Inbox finalizer failed; local logs retain the error.\n'
   exit 1
@@ -98,9 +77,16 @@ then
 fi
 cat "$STAGING_DIR/import-result.json"
 ADDED=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["added"])' "$STAGING_DIR/import-result.json")
-if [[ "$ADDED" -gt 0 ]]; then
-  PENDING=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pending"])' "$STAGING_DIR/import-result.json")
-  if ! finalize_inbox ready-for-review "New Mazzulla candidates: $ADDED ($PENDING pending); return to the original Mazzulla chat and ask to review quotes."; then
+# Always reconcile creation intents after a successful import, including empty or
+# repeated batches. A prior interrupted GitHub write must be recoverable.
+if ! python3 "${MAZZULLA_PR_SCRIPT:-$REPO_ROOT/scripts/quote_review_pr.py}" --queue-dir "$QUEUE_DIR" \
+  create >"$STAGING_DIR/pr-result.json"; then
+  report_failure "review PR creation failed; pending candidates remain saved"
+fi
+cat "$STAGING_DIR/pr-result.json"
+PR_URL=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("url") or "")' "$STAGING_DIR/pr-result.json")
+if [[ -n "$PR_URL" ]]; then
+  if ! finalize_inbox ready-for-review "Mazzulla candidates are ready for review: $PR_URL; comment to revise and merge to publish."; then
     printf 'Candidates are saved, but inbox finalization failed.\n'
     exit 1
   fi
