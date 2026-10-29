@@ -601,5 +601,36 @@
     "source_url": "https://www.celticsblog.com/boston-celtics-news/148320/joe-mazzulla-shares-expectations-for-east-it-could-go-either-way",
     "kind": "anecdote",
     "added_at": "2026-10-29"
+  },
+  {
+    "id": "candidate-a5b856ae889a909c",
+    "text": "When you go to a restaurant, the challenge we enjoy is like, can you eat the whole menu?",
+    "source_url": "https://www.nbcsportsboston.com/video/nba/boston-celtics/celtics-videos/relive-joe-mazzullas-funniest-moments-from-2024-25-season/704001/",
+    "added_at": "2026-10-29",
+    "kind": "quote"
+  },
+  {
+    "id": "candidate-30e36e122a1ab508",
+    "text": "Pereira gets hit in the nuts. Looks at the referee, knocks the guy out five seconds later.",
+    "source_url": "https://www.si.com/fannation/wrestling/ufc/boston-celtics-coach-joe-mazzulla-using-ufc-footage-to-inspire-his-team",
+    "added_at": "2026-10-29",
+    "kind": "quote",
+    "context": "Explaining the UFC film he showed the Celtics:"
+  },
+  {
+    "id": "candidate-54a2f8457af21753",
+    "text": "He had the balls to throw a student out. He didn’t leave it to the hall monitor.",
+    "source_url": "https://www.boston.com/sports/morning-sports-update/2026/03/11/joe-mazzulla-jaylen-brown-ejection/",
+    "added_at": "2026-10-29",
+    "kind": "quote",
+    "context": "Comparing NBA officials to his high-school principal after Jaylen Brown’s ejection:"
+  },
+  {
+    "id": "candidate-d8adeb2fc7461097",
+    "text": "I’m a bird brain, you know I can’t do that.",
+    "source_url": "https://www.boston.com/sports/boston-celtics/2024/01/30/joe-mazzulla-kendrick-perkins-bird-brain-comments/",
+    "added_at": "2026-10-29",
+    "kind": "quote",
+    "context": "Asked for injury analysis after Kendrick Perkins mocked his intelligence:"
   }
 ]
