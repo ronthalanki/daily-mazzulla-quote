@@ -632,5 +632,20 @@
     "added_at": "2026-10-29",
     "kind": "quote",
     "context": "Asked for injury analysis after Kendrick Perkins mocked his intelligence:"
+  },
+  {
+    "id": "candidate-7a4002ae7c5e89e4",
+    "text": "Jordan Walsh recalls Mazzulla telling him his career had been “dead in the water” and was now alive again. Walsh pointed out that the season had just started.",
+    "source_url": "https://www.boston.com/sports/boston-celtics/2026/04/18/celtics-jordan-walsh-tyrese-maxey-playoffs-comments/",
+    "added_at": "2026-11-02",
+    "kind": "anecdote"
+  },
+  {
+    "id": "candidate-0ce580ed5c0369a5",
+    "text": "We can’t get anything accomplished today cause this guy doesn’t want to tie his shoes.",
+    "source_url": "https://www.celticsblog.com/celtics-podcasts/148616/joe-mazzulla-joined-the-white-noise-podcast-derrick-white-boston-celtics",
+    "added_at": "2026-11-02",
+    "kind": "quote",
+    "context": "On Derrick White leaving his shoes untied when he doesn’t want to practice:"
   }
 ]
